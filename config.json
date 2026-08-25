@@ -1,0 +1,53 @@
+{
+  "projeto": {
+    "nome": "llm-tester",
+    "descricao": "Benchmarking e Avaliação de LLMs (Padrão vs. RAG) no Domínio Jurídico - Pensão por Morte"
+  },
+  "tema": {
+    "nome": "Pensão por Morte",
+    "area": "Direito Previdenciário",
+    "dominio_prompt": "Direito Previdenciário",
+    "especialidade_juiz": "Direito Previdenciário (tema Pensão por Morte)",
+    "palavras_chave_datajud": ["pensao", "pensão", "morte", "previdenci", "previdenciário", "beneficio"]
+  },
+  "api": {
+    "groq_api_key_env": "GROQ_API_KEY"
+  },
+  "dados": {
+    "base_juridica": "data/base_juridica/",
+    "arquivo_perguntas": "data/perguntas/perguntas.json",
+    "arquivo_gabarito": "data/gabarito/gabarito.json",
+    "diretorio_saida": "outputs/"
+  },
+  "modelos": {
+    "llm_execucao": "openai/gpt-oss-20b",
+    "llm_juiz": "openai/gpt-oss-120b",
+    "modelos_disponiveis": [
+      "openai/gpt-oss-120b",
+      "openai/gpt-oss-20b",
+      "groq/compound",
+      "groq/compound-mini",
+      "qwen/qwen3.6-27b"
+    ]
+  },
+  "parametros": {
+    "temperature": 0.0,
+    "max_tokens": 4096,
+    "reasoning_effort": "low",
+    "chunk_size": 1000,
+    "chunk_overlap": 150,
+    "top_k": 4,
+    "embedding_model": "sentence-transformers/all-MiniLM-L6-v2",
+    "collection_name": "pensao_por_morte",
+    "persist_directory": "data/chroma_db"
+  },
+  "rate_limit": {
+    "max_retries": 6,
+    "base_delay_s": 2.0,
+    "max_delay_s": 60.0
+  },
+  "prompts": {
+    "llm_padrao": "Responda de forma precisa à seguinte questão de {dominio}: {pergunta}",
+    "llm_rag": "Você é um assistente jurídico especializado em {dominio}. Responda à pergunta utilizando ESTRITAMENTE as informações fornecidas no contexto abaixo.\n\nCONTEXTO:\n{contexto_recuperado}\n\nPERGUNTA:\n{pergunta}"
+  }
+}

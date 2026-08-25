@@ -1,0 +1,31 @@
+{
+  "metadata": {
+    "tema": "Pensão por Morte",
+    "area": "Direito Previdenciário",
+    "descricao": "Respostas oficiais de referência e critérios de avaliação",
+    "total_perguntas": 3
+  },
+  "gabarito": [
+    {
+      "id": "Q01",
+      "pergunta": "O cônjuge separado de fato tem direito à pensão por morte?",
+      "gabarito_oficial": "Sim, o cônjuge separado de fato mantém o direito à pensão por morte, desde que comprove a dependência econômica em relação ao segurado falecido, conforme entendimento consolidado (Súmula 336 do STJ).",
+      "acordao": "STJ - Súmula 336",
+      "criterio_fidelidade": "A resposta deve confirmar o direito condicionado à comprovação de dependência econômica e, idealmente, citar a Súmula 336 do STJ."
+    },
+    {
+      "id": "Q02",
+      "pergunta": "É possível a concessão de pensão por morte a companheiro em união estável homoafetiva?",
+      "gabarito_oficial": "Sim. O STF reconheceu a união estável homoafetiva como entidade familiar (ADPF 132 e ADI 4277), garantindo ao companheiro do mesmo sexo os mesmos direitos previdenciários, incluindo a pensão por morte.",
+      "acordao": "STF - ADPF 132 / ADI 4277",
+      "criterio_fidelidade": "A resposta deve confirmar a possibilidade, citar o reconhecimento pelo STF e mencionar a equiparação de direitos previdenciários."
+    },
+    {
+      "id": "Q03",
+      "pergunta": "A dependência econômica do cônjuge precisa ser comprovada para a concessão da pensão por morte?",
+      "gabarito_oficial": "Não. A dependência econômica do cônjuge é presumida por lei, nos termos do art. 16, § 4º, da Lei 8.213/91, não sendo exigida comprovação de dependência financeira para a concessão do benefício.",
+      "acordao": "Lei 8.213/91, art. 16, § 4º",
+      "criterio_fidelidade": "A resposta deve indicar a presunção legal de dependência econômica do cônjuge e o dispositivo legal aplicável."
+    }
+  ]
+}

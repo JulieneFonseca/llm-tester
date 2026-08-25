@@ -1,0 +1,29 @@
+# === Núcleo LLM / RAG (versões fixadas para evitar backtracking do pip) ===
+langchain==0.3.7
+langchain-core==0.3.29
+langchain-text-splitters==0.3.2
+langchain-community==0.3.7
+langchain-groq==0.2.3
+langchain-huggingface==0.1.2
+
+# === Vector store & embeddings ===
+chromadb==0.5.20
+sentence-transformers==3.3.1
+
+# === Provider (Groq) ===
+groq==0.13.1
+
+# === Leitura de documentos ===
+pypdf==5.1.0
+
+# === Interface / CLI ===
+streamlit==1.40.2
+rich==13.9.4
+
+# === Dados & métricas ===
+pandas==2.2.3
+plotly==5.24.1
+
+# === Utilidades ===
+python-dotenv==1.0.1
+tenacity==9.0.0

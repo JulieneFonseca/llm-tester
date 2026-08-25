@@ -1,0 +1,30 @@
+{
+  "metadata": {
+    "tema": "Pensão por Morte",
+    "area": "Direito Previdenciário",
+    "descricao": "Dataset de perguntas jurídicas de entrada para o benchmarking",
+    "total_perguntas": 4
+  },
+  "perguntas": [
+    {
+      "id": "Q01",
+      "pergunta": "O cônjuge separado de fato tem direito à pensão por morte?",
+      "categoria": "dependentes"
+    },
+    {
+      "id": "Q02",
+      "pergunta": "É possível a concessão de pensão por morte a companheiro em união estável homoafetiva?",
+      "categoria": "dependentes"
+    },
+    {
+      "id": "Q03",
+      "pergunta": "A dependência econômica do cônjuge precisa ser comprovada para a concessão da pensão por morte?",
+      "categoria": "jurisprudencia"
+    },
+    {
+      "id": "Q04",
+      "pergunta": "Casal com regime separação de bens, se o marido morer esposa recebe pensão",
+      "categoria": "jurisprudencia"
+    }
+  ]
+}
