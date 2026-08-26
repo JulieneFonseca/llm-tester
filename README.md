@@ -13,6 +13,16 @@ abordagens e as compara com um gabarito oficial usando uma **LLM Juiz**:
 Cada etapa é **cronometrada** (`time.perf_counter()`), permitindo medir o
 *overhead* de latência introduzido pelo pipeline RAG.
 
+## Documentação
+
+- [Análise de Requisitos](docs/ANALISE_DE_REQUISITOS.md) — requisitos funcionais
+  e não funcionais, regras de negócio, casos de uso e rastreabilidade.
+- [Especificação da LLM Juiz](docs/LLM_JUIZ.md) — estrutura, configurações,
+  rubrica de avaliação e regras de negócio do componente de avaliação
+  automatizada.
+- [Especificação da LLM RAG](docs/LLM_RAG.md) — arquitetura RAG, tipo de RAG
+  utilizado, regras de negócio e possibilidades de evolução para novos testes.
+
 ## Stack
 
 - Python 3.10+
