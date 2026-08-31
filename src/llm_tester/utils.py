@@ -362,4 +362,19 @@ def salvar_csv(relatorio: dict, diretorio_saida: str | Path) -> str:
         writer = csv.DictWriter(f, fieldnames=list(linhas[0].keys()))
         writer.writeheader()
         writer.writerows(linhas)
+
+        # Seção de resumo com o parecer final da LLM Juiz (dado global).
+        parecer = (
+            relatorio.get("execucao_metadata", {}).get("parecer_final_juiz") or {}
+        )
+        if parecer.get("parecer_texto"):
+            plain = csv.writer(f)
+            plain.writerow([])  # linha em branco separando
+            plain.writerow(["PARECER FINAL DA LLM JUIZ"])
+            plain.writerow(["abordagem_vencedora", parecer.get("abordagem_vencedora", "")])
+            # Parecer em texto: uma célula por linha do parecer, para manter
+            # legibilidade ao abrir a planilha.
+            for linha_txt in parecer["parecer_texto"].splitlines():
+                if linha_txt.strip():
+                    plain.writerow([linha_txt])
     return str(caminho)

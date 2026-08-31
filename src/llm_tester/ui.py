@@ -36,6 +36,8 @@ def _init_state():
     ss.setdefault("logs", [])
     ss.setdefault("resultados_parciais", [])
     ss.setdefault("executando", False)
+    ss.setdefault("iniciar_lote", False)
+    ss.setdefault("lote_selecionadas", [])
 
     # Aplica o tema configurado ao metadata dos datasets salvos.
     tema = ss["config"].tema
@@ -44,6 +46,27 @@ def _init_state():
 
 def _add_log(msg: str):
     st.session_state["logs"].append(msg)
+
+
+def _render_logs(container, linhas: list[str], altura: int = 320) -> None:
+    """
+    Renderiza os logs numa área rolável com quebra de linha, evitando que o
+    conteúdo seja cortado à direita (como acontece com st.code).
+
+    - `container`: um st.empty() (streaming) ou o próprio st.
+    - `altura`: altura da caixa em pixels (scroll vertical quando excede).
+    """
+    from html import escape
+
+    texto = "\n".join(linhas) if linhas else "(sem logs)"
+    html = (
+        f'<div style="height:{altura}px; overflow:auto; '
+        'background:#0e1117; color:#d0d0d0; border:1px solid #333; '
+        'border-radius:6px; padding:10px; font-family:monospace; '
+        'font-size:12px; white-space:pre-wrap; word-break:break-word;">'
+        f'{escape(texto)}</div>'
+    )
+    container.markdown(html, unsafe_allow_html=True)
 
 
 # ---------------------------------------------------------------------------
@@ -427,7 +450,13 @@ def _validar_groq(api_key: str):
 # Execução
 # ---------------------------------------------------------------------------
 
-def _iniciar_benchmarking(perguntas=None, gabarito=None):
+def _iniciar_benchmarking(
+    perguntas=None,
+    gabarito=None,
+    log_box=None,
+    tabela_box=None,
+    progress_box=None,
+):
     ss = st.session_state
     cfg: Config = ss["config"]
 
@@ -451,13 +480,16 @@ def _iniciar_benchmarking(perguntas=None, gabarito=None):
     ss["relatorio"] = None
     ss["executando"] = True
 
-    progress = st.progress(0, text="Iniciando...")
-    log_box = st.empty()
-    tabela_box = st.empty()
+    # Usa os placeholders fornecidos (posicionados na ordem correta pela aba);
+    # se não vierem, cria localmente como fallback.
+    log_box = log_box or st.empty()
+    tabela_box = tabela_box or st.empty()
+    progress_box = progress_box or st.empty()
+    progress = progress_box.progress(0, text="Iniciando...")
 
     def log(msg: str):
         _add_log(msg)
-        log_box.code("\n".join(ss["logs"][-25:]))
+        _render_logs(log_box, ss["logs"][-40:])
 
     def on_progress(i, total, resultado):
         progress.progress(i / total, text=f"Processando pergunta {i} de {total}...")
@@ -522,7 +554,7 @@ def _executar_individual(pergunta: str, gabarito: str):
 
     def log(msg: str):
         logs_ind.append(msg)
-        log_box.code("\n".join(logs_ind[-25:]))
+        _render_logs(log_box, logs_ind[-40:])
 
     with st.spinner("Executando (Padrão + RAG + Juiz)..."):
         try:
@@ -610,7 +642,11 @@ def _aba_benchmarking():
             st.write(f"**{len(selecionadas)}** pergunta(s) selecionada(s).")
 
             if st.button("▶️ Executar em lote", type="primary", key="btn_lote"):
-                _iniciar_benchmarking(perguntas=selecionadas, gabarito=ss.get("gabarito"))
+                # Guarda a seleção e sinaliza a execução; a renderização
+                # (logs + tabela) acontece na seção de acompanhamento abaixo,
+                # evitando conteúdo duplicado logo abaixo do botão.
+                ss["lote_selecionadas"] = selecionadas
+                ss["iniciar_lote"] = True
 
     # ---- Execução Individual --------------------------------------------
     with sub_ind:
@@ -626,13 +662,37 @@ def _aba_benchmarking():
             _executar_individual(pergunta, gabarito)
 
     # ---- Acompanhamento da execução em lote -----------------------------
-    if ss["logs"] or ss["resultados_parciais"]:
+    # Renderiza a seção UMA única vez, na ordem: Console de Logs -> Tabela.
+    # Os placeholders (st.empty) são reutilizados tanto pelo streaming ao vivo
+    # quanto pela exibição pós-execução, evitando duplicação.
+    iniciar = ss.pop("iniciar_lote", False)
+
+    if iniciar or ss["logs"] or ss["resultados_parciais"]:
         st.divider()
         st.subheader("🖥️ Console de Logs")
-        st.code("\n".join(ss["logs"][-40:]) or "(sem logs)")
-        if ss["resultados_parciais"]:
-            st.subheader("📊 Tabela em Tempo Real")
-            st.dataframe(_df_parcial(ss["resultados_parciais"]), use_container_width=True)
+        log_box = st.empty()
+        progress_box = st.empty()
+        st.subheader("📊 Tabela de Resultados")
+        tabela_box = st.empty()
+
+        if iniciar:
+            # Executa agora, transmitindo os logs/tabela para os placeholders
+            # criados acima (na ordem correta).
+            _iniciar_benchmarking(
+                perguntas=ss.get("lote_selecionadas"),
+                gabarito=ss.get("gabarito"),
+                log_box=log_box,
+                tabela_box=tabela_box,
+                progress_box=progress_box,
+            )
+        else:
+            # Exibição pós-execução (reruns seguintes): mostra o último estado.
+            _render_logs(log_box, ss["logs"][-200:], altura=400)
+            if ss["resultados_parciais"]:
+                tabela_box.dataframe(
+                    _df_parcial(ss["resultados_parciais"]),
+                    use_container_width=True,
+                )
 
 
 # ---------------------------------------------------------------------------

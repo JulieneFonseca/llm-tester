@@ -96,10 +96,12 @@ Abre 4 abas:
 2. **Dados** — cadastro e manutenção das perguntas e gabaritos usados nas
    execuções.
 3. **Execução** — duas sub-abas: **Execução em Lote** (roda as perguntas
-   cadastradas selecionadas, com console de logs em tempo real e tabela
-   dinâmica de tempos e notas) e **Execução Individual** (testa uma pergunta
-   avulsa, exibindo as respostas da **LLM Padrão** e da **LLM com RAG** lado a
-   lado, com tempos, além do detalhamento do Juiz).
+   cadastradas selecionadas; o acompanhamento aparece na ordem **console de
+   logs** — área rolável com quebra de linha, para ler o conteúdo completo — e
+   depois a **tabela** de tempos e notas, ambos atualizados em tempo real) e
+   **Execução Individual** (testa uma pergunta avulsa, exibindo as respostas da
+   **LLM Padrão** e da **LLM com RAG** lado a lado, com tempos, além do
+   detalhamento do Juiz).
 4. **Resultados** — **parecer final da LLM Juiz** (abordagem vencedora + texto
    descritivo), KPIs de qualidade e performance, gráficos comparativos
    (Plotly), *Detalhamento da Avaliação do modelo LLM Juiz* (notas
@@ -163,8 +165,9 @@ em chunks/s.
 Ao término do benchmarking, a LLM Juiz gera um **parecer descritivo
 consolidado** que analisa todas as avaliações e **posiciona qual abordagem
 (LLM Padrão ou LLM com RAG) teve o melhor desempenho geral**, com a
-justificativa das métricas. O parecer aparece no CLI, na aba Resultados e é
-salvo no relatório JSON (`execucao_metadata.parecer_final_juiz`).
+justificativa das métricas. O parecer aparece no CLI, na aba Resultados, é
+salvo no relatório JSON (`execucao_metadata.parecer_final_juiz`) e também numa
+seção de resumo ao final do CSV de resultados.
 
 ## Configurar outro tema
 

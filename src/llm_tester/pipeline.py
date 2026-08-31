@@ -246,7 +246,7 @@ class Pipeline:
 
         if not forcar and Path(persist_dir).exists():
             t0 = time.perf_counter()
-            log("[base] Vector store existente encontrado. Carregando...")
+            log("[base] Vetor existente encontrado. Carregando...")
             self._vector_store = Chroma(
                 collection_name=collection,
                 embedding_function=self._get_embeddings(),

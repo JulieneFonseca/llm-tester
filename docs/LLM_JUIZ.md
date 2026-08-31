@@ -236,8 +236,10 @@ O Juiz é instruído a cobrir, em texto corrido:
 
 ### 5-A.4. Destino
 
-O parecer é gravado em `execucao_metadata.parecer_final_juiz` no relatório JSON
-e exibido no **CLI** (`main.py`) e na aba **Resultados** da interface.
+O parecer é gravado em `execucao_metadata.parecer_final_juiz` no relatório JSON,
+incluído numa **seção de resumo ao final do CSV** de resultados (após as linhas
+por pergunta, com a abordagem vencedora e o texto), e exibido no **CLI**
+(`main.py`) e na aba **Resultados** da interface.
 
 ---
 

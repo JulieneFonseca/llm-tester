@@ -220,7 +220,9 @@ Os requisitos abaixo refletem o comportamento implementado no código.
   execução (data/hora, modelos, total), performance temporal global, métricas de
   qualidade global e resultados detalhados por pergunta.
 - **RF-34 — Exportação:** deve exportar o relatório em JSON e em CSV (uma linha
-  por pergunta, critérios em pares Padrão/RAG) no diretório de saída.
+  por pergunta, critérios em pares Padrão/RAG) no diretório de saída. O CSV
+  inclui, ao final, uma seção de resumo com o parecer final da LLM Juiz
+  (abordagem vencedora e texto descritivo).
 - **RF-35 — Painel de resultados:** deve exibir KPIs, gráficos comparativos de
   qualidade e de performance temporal, detalhamento da avaliação do Juiz e uma
   tabela detalhada com filtros (ex.: só casos com alucinação; só quando RAG >
@@ -323,7 +325,8 @@ O relatório final contém:
   `validacao_processos_padrao` / `validacao_processos_rag`.
 
 Exportações disponíveis: **JSON** (estrutura completa) e **CSV** (uma linha por
-pergunta, critérios em pares Padrão/RAG).
+pergunta, critérios em pares Padrão/RAG, com uma seção de resumo ao final
+contendo o parecer final da LLM Juiz).
 
 ---
 
