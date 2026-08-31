@@ -2,8 +2,8 @@
 
 **Projeto:** llm-tester — Benchmarking e Avaliação de LLMs (Padrão vs. RAG)
 **Domínio de referência:** Direito Previdenciário — Pensão por Morte (tema configurável)
-**Versão do documento:** 1.0
-**Data:** 25/08/2026
+**Versão do documento:** 1.1
+**Data:** 31/08/2026
 
 ---
 
@@ -61,9 +61,11 @@ sem custo e sem dependência de rede.
 
 ### 2.2. Funções principais
 
-- Ingestão e indexação vetorial de uma base jurídica (PDF/TXT).
+- Ingestão e indexação vetorial de uma base jurídica (PDF/TXT/CSV), com
+  cronometragem das fases da indexação.
 - Execução das duas abordagens (Padrão e RAG) com cronometragem por etapa.
-- Avaliação automatizada das respostas por uma LLM Juiz.
+- Avaliação automatizada das respostas por uma LLM Juiz, incluindo um parecer
+  final consolidado que posiciona a abordagem vencedora.
 - Validação factual de números de processo citados via DataJud.
 - Cálculo de métricas de qualidade e performance.
 - Visualização de resultados e exportação (JSON/CSV).
@@ -106,7 +108,10 @@ Os requisitos abaixo refletem o comportamento implementado no código.
   execução e o modelo Juiz dentre a lista de modelos disponíveis (Groq).
 - **RF-05 — Parâmetros de execução:** deve permitir ajustar `temperature`,
   `max_tokens`, `reasoning_effort`, `chunk_size`, `chunk_overlap`, `top_k`,
-  `embedding_model`, `collection_name` e `persist_directory`.
+  `search_type` (mmr/similarity), `mmr_lambda`, `embedding_model`,
+  `collection_name`, `persist_directory` e as opções de ingestão de CSV
+  (`csv_base_juridica`: `delimitador`, `limite_campo_chars`, `resumo_max_chars`,
+  `campos_ignorar`).
 
 ### 3.2. Dados de teste
 
@@ -120,17 +125,30 @@ Os requisitos abaixo refletem o comportamento implementado no código.
 
 ### 3.3. Ingestão e RAG
 
-- **RF-09 — Carregar base jurídica:** deve carregar documentos PDF e TXT de um
-  diretório informado (recursivamente), registrando sucesso/erro por arquivo.
+- **RF-09 — Carregar base jurídica:** deve carregar documentos PDF, TXT e CSV
+  de um diretório informado (recursivamente), registrando sucesso/erro por
+  arquivo. Para CSVs, cada linha vira um Document; campos com conteúdo
+  excedendo `limite_campo_chars` (padrão 500) são resumidos automaticamente
+  para até `resumo_max_chars` (padrão 500) caracteres, preservando sentenças
+  completas — ideal para bases de acórdãos com campos extensos (ex.: Resumo
+  Resultado, Acordão).
 - **RF-10 — Segmentação (chunking):** deve segmentar os documentos com
-  `chunk_size` (padrão 1000) e `chunk_overlap` (padrão 150).
+  `chunk_size` (padrão 1500) e `chunk_overlap` (padrão 300).
+- **RF-10a — Deduplicação e sanitização:** deve descartar chunks sem conteúdo
+  (texto nulo/vazio) e remover chunks com conteúdo idêntico antes de indexar.
 - **RF-11 — Indexação vetorial:** deve indexar os chunks no ChromaDB, com os
   embeddings gerados localmente (`all-MiniLM-L6-v2` por padrão), persistindo em
   `persist_directory`.
+- **RF-11a — Cronometragem da indexação:** deve medir e registrar (no log e no
+  relatório, em `performance_indexacao`) os tempos de carga dos documentos,
+  chunking + deduplicação e indexação vetorial, além do total (segundos e
+  minutos) e do *throughput* em chunks/s.
 - **RF-12 — Reuso e reindexação:** deve reutilizar um vector store existente e
   permitir forçar a reindexação do zero (flag/`--reindexar`).
-- **RF-13 — Recuperação (retrieval):** deve recuperar os `top_k` (padrão 4)
-  trechos mais similares à pergunta.
+- **RF-13 — Recuperação (retrieval):** deve recuperar `top_k` (padrão 8) trechos
+  relevantes à pergunta, com estratégia **MMR** (diversidade, padrão) ou
+  similaridade pura, buscando diretamente na collection do ChromaDB e
+  descartando trechos sem conteúdo.
 
 ### 3.4. Execução das LLMs
 
@@ -159,6 +177,15 @@ Os requisitos abaixo refletem o comportamento implementado no código.
 - **RF-22 — Tolerância a JSON inválido:** deve tratar falhas de parsing do JSON
   do Juiz com fallback (avaliação vazia marcada como alucinação), sem
   interromper a execução.
+- **RF-22a — Nomenclatura das respostas:** o Juiz deve se referir às abordagens
+  como "a resposta da LLM Padrão" e "a resposta da LLM com RAG" (nunca "A"/"B")
+  nas justificativas e no parecer.
+- **RF-22b — Parecer final consolidado:** ao término de todas as avaliações, o
+  Juiz deve gerar um parecer descritivo (texto livre) que posiciona qual
+  abordagem (LLM Padrão ou LLM com RAG) teve o melhor desempenho geral,
+  identificando a abordagem vencedora, e registrá-lo no relatório
+  (`parecer_final_juiz`). A falha na geração do parecer não deve interromper a
+  execução.
 
 ### 3.6. Validação factual (DataJud)
 
@@ -213,7 +240,7 @@ Os requisitos abaixo refletem o comportamento implementado no código.
 - **RF-40 — Encerrar servidor:** a interface deve oferecer um controle para
   encerrar o servidor local.
 - **RF-41 — Validação de diretório:** deve validar o caminho da base e alertar
-  quando vazio, quando for URL, inexistente ou sem arquivos PDF/TXT.
+  quando vazio, quando for URL, inexistente ou sem arquivos PDF/TXT/CSV.
 
 ---
 
@@ -287,7 +314,9 @@ Os requisitos abaixo refletem o comportamento implementado no código.
 O relatório final contém:
 
 - `execucao_metadata`: `data_hora`, `modelo_testado`, `modelo_juiz`,
-  `total_perguntas`, `performance_temporal_global` e `metricas_qualidade_global`.
+  `total_perguntas`, `performance_indexacao` (tempos de carga/chunking/indexação),
+  `performance_temporal_global`, `metricas_qualidade_global` e
+  `parecer_final_juiz` (abordagem vencedora + texto descritivo).
 - `resultados_detalhados`: por pergunta — `id_pergunta`, `pergunta`,
   `gabarito_oficial`, respostas Padrão e RAG, tempos (padrão, retrieval, geração,
   total RAG, juiz), `fontes_rag`, `avaliacao_llm_padrao`, `avaliacao_llm_rag` e
@@ -345,7 +374,7 @@ pergunta, critérios em pares Padrão/RAG).
 |-----------|--------------------------|
 | RF-01 a RF-05 | `config.py`, `config.json`, `ui.py` |
 | RF-06 a RF-08 | `utils.py` (carregar/salvar/indexar), `ui.py` |
-| RF-09 a RF-13 | `pipeline.py` (`indexar_base`, `_get_retriever`) |
+| RF-09 a RF-13 | `pipeline.py` (`indexar_base`, `_carregar_csv_base`, `_recuperar_trechos`) |
 | RF-14 a RF-18 | `pipeline.py` (`executar_padrao`, `executar_rag`), `ui.py` |
 | RF-19 a RF-22 | `judge.py` |
 | RF-23 a RF-29 | `datajud.py` |

@@ -3,7 +3,7 @@
     "tema": "Pensão por Morte",
     "area": "Direito Previdenciário",
     "descricao": "Dataset de perguntas jurídicas de entrada para o benchmarking",
-    "total_perguntas": 4
+    "total_perguntas": 3
   },
   "perguntas": [
     {
@@ -19,11 +19,6 @@
     {
       "id": "Q03",
       "pergunta": "A dependência econômica do cônjuge precisa ser comprovada para a concessão da pensão por morte?",
-      "categoria": "jurisprudencia"
-    },
-    {
-      "id": "Q04",
-      "pergunta": "Casal com regime separação de bens, se o marido morer esposa recebe pensão",
       "categoria": "jurisprudencia"
     }
   ]

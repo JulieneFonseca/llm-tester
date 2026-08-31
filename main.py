@@ -10,7 +10,15 @@ Uso:
 from __future__ import annotations
 
 import sys
+import os
 import argparse
+
+# Garante saída UTF-8 mesmo em terminais Windows com cp1252 ou quando
+# stdout é redirecionado para arquivo.
+if sys.stdout.encoding != "utf-8":
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if sys.stderr.encoding != "utf-8":
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 # Permite executar tanto como script quanto como módulo
 sys.path.insert(0, "src")
@@ -19,11 +27,12 @@ from rich.console import Console  # noqa: E402
 from rich.panel import Panel  # noqa: E402
 from rich.table import Table  # noqa: E402
 
+console = Console()
+console.print("[dim]Aguarde... inicializando o sistema[/dim]")
+
 from llm_tester.config import Config  # noqa: E402
 from llm_tester.pipeline import executar_benchmarking  # noqa: E402
 from llm_tester import utils  # noqa: E402
-
-console = Console()
 
 
 def main() -> int:
@@ -100,6 +109,16 @@ def main() -> int:
         f"[dim]Overhead médio do RAG: {m['overhead_medio_rag_s']:.2f} s "
         f"({m['overhead_medio_rag_pct']:.1f}%)[/dim]"
     )
+
+    # Parecer final consolidado da LLM Juiz
+    parecer = relatorio["execucao_metadata"].get("parecer_final_juiz") or {}
+    if parecer.get("parecer_texto"):
+        vencedora = parecer.get("abordagem_vencedora", "Indefinido")
+        console.print(Panel(
+            parecer["parecer_texto"],
+            title=f"Parecer Final da LLM Juiz — Vencedora: {vencedora}",
+            border_style="magenta",
+        ))
 
     console.print(Panel(
         f"[bold green]Benchmarking concluído![/bold green]\n"

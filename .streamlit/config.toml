@@ -1,2 +1,11 @@
 [theme]
 primaryColor = "#808080"
+
+[server]
+# Aumenta limite de mensagem WebSocket (default 200MB, suficiente)
+maxMessageSize = 200
+# Mantém conexão ativa durante execuções longas
+enableWebsocketCompression = false
+
+[browser]
+gatherUsageStats = false

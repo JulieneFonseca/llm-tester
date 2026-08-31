@@ -56,7 +56,7 @@ def _validar_diretorio_base(caminho: str) -> None:
 
     Aceita caminhos locais e pastas de nuvem sincronizadas (montadas como
     diretório no sistema de arquivos). Alerta em casos comuns de erro:
-    campo vazio, URL/link de nuvem, caminho inexistente ou sem PDFs/TXTs.
+    campo vazio, URL/link de nuvem, caminho inexistente ou sem PDFs/TXTs/CSVs.
     """
     texto = (caminho or "").strip()
     if not texto:
@@ -84,14 +84,14 @@ def _validar_diretorio_base(caminho: str) -> None:
 
     n_arquivos = len(list(caminho_p.glob("**/*.pdf"))) + len(
         list(caminho_p.glob("**/*.txt"))
-    )
+    ) + len(list(caminho_p.glob("**/*.csv")))
     if n_arquivos == 0:
         st.warning(
-            "Diretório encontrado, mas sem arquivos PDF/TXT. Adicione documentos "
+            "Diretório encontrado, mas sem arquivos PDF/TXT/CSV. Adicione documentos "
             "ou envie-os abaixo."
         )
     else:
-        st.caption(f"✅ {n_arquivos} arquivo(s) PDF/TXT encontrado(s) em '{texto}'.")
+        st.caption(f"✅ {n_arquivos} arquivo(s) PDF/TXT/CSV encontrado(s) em '{texto}'.")
 
 
 def _painel_tema(cfg: Config) -> None:
@@ -182,7 +182,7 @@ def _aba_configuracao():
     st.divider()
     st.subheader("📚 Base Jurídica")
     base_dir = st.text_input(
-        "Diretório da base jurídica (PDFs/TXTs)",
+        "Diretório da base jurídica (PDFs/TXTs/CSVs)",
         value=st.session_state["base_dir"],
         help=(
             "Aceita um diretório local ou uma pasta de nuvem sincronizada "
@@ -194,13 +194,38 @@ def _aba_configuracao():
     st.session_state["base_dir"] = base_dir
     _validar_diretorio_base(base_dir)
     up_docs = st.file_uploader(
-        "Ou envie acórdãos (PDFs/TXTs)", type=["pdf", "txt"], accept_multiple_files=True
+        "Ou envie documentos (PDFs/TXTs/CSVs)", type=["pdf", "txt", "csv"], accept_multiple_files=True
     )
     if up_docs:
         Path(base_dir).mkdir(parents=True, exist_ok=True)
         for doc in up_docs:
             (Path(base_dir) / doc.name).write_bytes(doc.getvalue())
         st.success(f"{len(up_docs)} arquivo(s) salvos em {base_dir}")
+
+    # Delimitador dos CSVs da base jurídica.
+    csv_cfg = cfg.parametros.setdefault("csv_base_juridica", {})
+    opcoes_delim = {
+        "Ponto e vírgula ( ; )": ";",
+        "Vírgula ( , )": ",",
+        "Tabulação ( tab )": "\t",
+        "Detectar automaticamente": "auto",
+    }
+    delim_atual = csv_cfg.get("delimitador", ";")
+    labels = list(opcoes_delim.keys())
+    valores = list(opcoes_delim.values())
+    idx_atual = valores.index(delim_atual) if delim_atual in valores else 0
+    delim_label = st.selectbox(
+        "Delimitador dos arquivos CSV",
+        labels,
+        index=idx_atual,
+        help=(
+            "Separador de colunas usado nos CSVs da base jurídica. Use ';' "
+            "quando o texto contém muitas vírgulas (ex.: ementas). "
+            "'Detectar automaticamente' tenta identificar sozinho."
+        ),
+    )
+    csv_cfg["delimitador"] = opcoes_delim[delim_label]
+
     reindexar = st.checkbox("Reindexar base do zero", value=False)
     st.session_state["reindexar"] = reindexar
 
@@ -264,6 +289,7 @@ def _editor_dataset(
     Editor genérico de dataset (perguntas/gabarito) com:
       - upload de arquivo
       - edição inline (adicionar / editar / excluir linhas)
+      - exclusão explícita via checkbox + botão
       - salvar no arquivo padrão
     """
     ss = st.session_state
@@ -292,28 +318,60 @@ def _editor_dataset(
     extras = [c for c in df.columns if c not in colunas]
     df = df[colunas + extras]
 
-    st.caption("Edite as células, adicione linhas (＋) ou remova (selecione e Delete).")
+    # Coluna de seleção para exclusão
+    df.insert(0, "🗑️", False)
+
+    st.caption(
+        "Edite as células, adicione linhas (＋) ou marque a coluna 🗑️ e clique "
+        "'Excluir selecionados'."
+    )
     df_editado = st.data_editor(
         df,
         num_rows="dynamic",
         use_container_width=True,
         hide_index=True,
         key=f"editor_{dados_key}",
+        column_config={
+            "🗑️": st.column_config.CheckboxColumn("🗑️", default=False, width="small"),
+        },
     )
 
-    col_a, col_b = st.columns([1, 3])
+    col_a, col_b, col_c = st.columns([1, 1, 2])
     with col_a:
         if st.button("💾 Salvar", key=f"salvar_{dados_key}"):
-            registros = [
-                {k: v for k, v in row.items() if pd.notna(v) and v != ""}
-                for row in df_editado.to_dict(orient="records")
-            ]
-            registros = [r for r in registros if r]  # remove linhas vazias
+            registros = _extrair_registros(df_editado, colunas)
             ss[dados_key] = registros
             salvar_fn(registros, caminho)
             st.success(f"Salvo em {caminho} ({len(registros)} item(ns)).")
     with col_b:
+        if st.button("🗑️ Excluir selecionados", key=f"excluir_{dados_key}"):
+            mask = df_editado["🗑️"].fillna(False).astype(bool)
+            n_excluir = mask.sum()
+            if n_excluir == 0:
+                st.warning("Nenhum item marcado para exclusão.")
+            else:
+                df_filtrado = df_editado[~mask]
+                registros = _extrair_registros(df_filtrado, colunas)
+                ss[dados_key] = registros
+                salvar_fn(registros, caminho)
+                st.success(
+                    f"{n_excluir} item(ns) excluído(s). "
+                    f"Restam {len(registros)} item(ns)."
+                )
+                st.rerun()
+    with col_c:
         st.caption(f"Total atual: {len(df_editado)} linha(s).")
+
+
+def _extrair_registros(df: "pd.DataFrame", colunas: list[str]) -> list[dict]:
+    """Extrai registros válidos de um DataFrame editado, removendo linhas vazias."""
+    # Remove a coluna de seleção para exclusão se presente.
+    cols_saida = [c for c in df.columns if c != "🗑️"]
+    registros = [
+        {k: v for k, v in row.items() if k in cols_saida and pd.notna(v) and v != ""}
+        for row in df.to_dict(orient="records")
+    ]
+    return [r for r in registros if r]
 
 
 def _aba_dados_teste():
@@ -711,6 +769,16 @@ def _aba_dashboard():
 
     meta = relatorio["execucao_metadata"]
     m = meta["metricas_qualidade_global"]
+
+    # Parecer final consolidado da LLM Juiz
+    parecer = meta.get("parecer_final_juiz") or {}
+    if parecer.get("parecer_texto"):
+        vencedora = parecer.get("abordagem_vencedora", "Indefinido")
+        st.subheader("⚖️ Parecer Final da LLM Juiz")
+        st.success(f"**Abordagem com melhor desempenho: {vencedora}**")
+        with st.expander("Ver parecer descritivo completo", expanded=True):
+            st.markdown(parecer["parecer_texto"])
+        st.divider()
 
     st.subheader("🏆 KPIs Globais")
     c1, c2, c3 = st.columns(3)

@@ -3,8 +3,8 @@
 **Projeto:** llm-tester
 **Componente:** LLM com RAG (Retrieval-Augmented Generation)
 **Arquivos-fonte:** `src/llm_tester/pipeline.py`, `src/llm_tester/config.py`
-**Versão do documento:** 1.0
-**Data:** 26/08/2026
+**Versão do documento:** 1.1
+**Data:** 31/08/2026
 
 ---
 
@@ -31,14 +31,16 @@ recuperação única, com as seguintes características:
   vetoriais (não há busca lexical/BM25 nem busca híbrida).
 - **Passo único (single-shot):** um único ciclo de *retrieve → generate*, sem
   iteração, sem re-recuperação e sem agentes.
-- **Sem reordenação (no re-ranking):** os `top_k` trechos mais similares são
-  usados diretamente, sem um reordenador (cross-encoder) posterior.
+- **Diversificação por MMR:** por padrão, a seleção dos `top_k` trechos usa
+  *Maximal Marginal Relevance* (relevância vs. diversidade), reduzindo trechos
+  redundantes/duplicados. Configurável para similaridade pura.
 - **Stuffing de contexto:** todos os trechos recuperados são concatenados e
   inseridos ("stuffed") diretamente no prompt.
 - **Indexação persistente:** os embeddings são calculados uma vez e persistidos
   no vector store (ChromaDB), sendo reutilizados entre execuções.
 
-Em resumo: **Dense Retrieval + Top-K + Context Stuffing + geração única.**
+Em resumo: **Dense Retrieval + MMR (Top-K diverso) + Context Stuffing + geração
+única.**
 
 ---
 
@@ -48,8 +50,9 @@ Em resumo: **Dense Retrieval + Top-K + Context Stuffing + geração única.**
 
 ```
 FASE 1 — INGESTÃO (offline, uma vez por base/tema)
-  Documentos (PDF/TXT)
-      │  PyPDFLoader / TextLoader
+  Documentos (PDF/TXT/CSV)
+      │  PyPDFLoader / TextLoader / CSV loader interno
+      │  (CSV: resumo automático de campos > limite_campo_chars)
       ▼
   Documentos carregados
       │  RecursiveCharacterTextSplitter (chunk_size / overlap)
@@ -73,12 +76,27 @@ FASE 2 — CONSULTA (por pergunta, em tempo de execução)
 
 ### 3.2. Ingestão e indexação (`Pipeline.indexar_base`)
 
-- **Carregamento:** varre o diretório da base recursivamente (`**/*.pdf` e
-  `**/*.txt`); PDFs via `PyPDFLoader`, textos via `TextLoader` (UTF-8). Falhas
-  em arquivos individuais são registradas e não abortam a ingestão.
+- **Carregamento:** varre o diretório da base recursivamente (`**/*.pdf`,
+  `**/*.txt` e `**/*.csv`); PDFs via `PyPDFLoader`, textos via `TextLoader`
+  (UTF-8) e CSVs via loader interno com resumo de campos grandes. Falhas em
+  arquivos individuais são registradas e não abortam a ingestão.
+- **CSV — resumo de campos grandes:** cada linha do CSV vira um `Document`. Se
+  um campo excede `limite_campo_chars` (padrão **500**), ele é resumido
+  automaticamente para até `resumo_max_chars` (padrão **500**) caracteres,
+  preservando sentenças completas. Campos curtos (≤200 chars) são incluídos
+  também nos metadados do documento para facilitar filtragem posterior.
+  O **delimitador** é configurável (`delimitador`, padrão `;`, também aceita
+  `,`, tab ou `"auto"`). Leitura em `utf-8-sig` (remove BOM). Configuração em
+  `parametros.csv_base_juridica`.
 - **Segmentação (chunking):** `RecursiveCharacterTextSplitter` com
-  `chunk_size` (padrão **1000**) e `chunk_overlap` (padrão **150**), usando os
+  `chunk_size` (padrão **1500**) e `chunk_overlap` (padrão **300**), usando os
   separadores `["\n\n", "\n", ". ", " ", ""]` (preferência por quebras naturais).
+- **Deduplicação e sanitização:** chunks sem conteúdo (texto `None`/vazio) são
+  descartados, e chunks com conteúdo idêntico são removidos (mantém o primeiro),
+  evitando redundância e falhas de validação.
+- **Cronometragem:** cada fase (carga, chunking+dedup, indexação vetorial) é
+  cronometrada e registrada no log e no relatório (`performance_indexacao`),
+  com o total em segundos/minutos e o *throughput* em chunks/s.
 - **Embeddings:** `HuggingFaceEmbeddings` com `all-MiniLM-L6-v2` (executado
   **localmente**, sem custo e sem chamada de rede).
 - **Vector store:** ChromaDB, persistido em `persist_directory`
@@ -88,15 +106,22 @@ FASE 2 — CONSULTA (por pergunta, em tempo de execução)
   coleção é apenas carregada; com `forcar=True` (ou `--reindexar`), a base é
   reprocessada do zero.
 
-### 3.3. Recuperação (`Pipeline._get_retriever`)
+### 3.3. Recuperação (`Pipeline._recuperar_trechos`)
 
-- Retriever configurado como `as_retriever(search_kwargs={"k": top_k})`.
-- `top_k` padrão = **4** — os quatro trechos mais similares à pergunta.
-- Estratégia de busca padrão do Chroma (similaridade densa).
+- A busca é feita **direto na collection do ChromaDB** (`collection.query`),
+  que retorna dicionários crus (`documents` + `metadatas` + `embeddings`).
+  Isso evita que o LangChain instancie objetos `Document` a partir de
+  registros com texto nulo (o que quebraria a validação do pydantic), e
+  descarta trechos sem conteúdo automaticamente.
+- `top_k` padrão = **8** — os oito trechos selecionados por pergunta.
+- **MMR (padrão):** busca `fetch_k = top_k * 3` candidatos e aplica *Maximal
+  Marginal Relevance* manualmente (com `numpy`), equilibrando relevância à
+  pergunta e diversidade entre os selecionados via `mmr_lambda` (padrão
+  **0.7**). Com `search_type="similarity"`, usa similaridade densa pura.
 
 ### 3.4. Geração (`Pipeline.executar_rag`)
 
-1. **Retrieval:** gera o embedding da pergunta e busca os `top_k` trechos;
+1. **Retrieval:** via `_recuperar_trechos` (busca direta na collection + MMR);
    cronometrado em `tempo_retrieval_rag_s`.
 2. **Montagem do contexto:** concatena os trechos separados por `\n\n---\n\n` e
    registra as fontes (trecho truncado em 500 caracteres + metadados).
@@ -131,14 +156,25 @@ Todas em `config.json` (seção `parametros`), com defaults em `config.py`:
 | Parâmetro | Padrão | Função |
 |-----------|--------|--------|
 | `embedding_model` | `sentence-transformers/all-MiniLM-L6-v2` | Modelo de embeddings (local) |
-| `chunk_size` | `1000` | Tamanho do chunk na segmentação |
-| `chunk_overlap` | `150` | Sobreposição entre chunks |
-| `top_k` | `4` | Nº de trechos recuperados |
+| `chunk_size` | `1500` | Tamanho do chunk na segmentação |
+| `chunk_overlap` | `300` | Sobreposição entre chunks |
+| `top_k` | `8` | Nº de trechos recuperados |
+| `search_type` | `mmr` | Estratégia de busca (`mmr` ou `similarity`) |
+| `mmr_lambda` | `0.7` | Peso relevância × diversidade no MMR (1.0 = só relevância) |
 | `collection_name` | `pensao_por_morte` | Coleção no ChromaDB |
 | `persist_directory` | `data/chroma_db` | Diretório de persistência do vector store |
 | `temperature` | `0.0` | Determinismo da geração |
 | `max_tokens` | `4096` | Orçamento de tokens da resposta |
 | `reasoning_effort` | `low` | Reduz tokens de raciocínio interno (modelos gpt-oss) |
+
+Parâmetros de ingestão de CSV (`parametros.csv_base_juridica`):
+
+| Parâmetro | Padrão | Função |
+|-----------|--------|--------|
+| `delimitador` | `;` | Separador de colunas do CSV (`;`, `,`, `\t` ou `auto`) |
+| `limite_campo_chars` | `500` | Campos com mais caracteres que isso são resumidos antes do embedding |
+| `resumo_max_chars` | `500` | Tamanho máximo do resumo gerado para campos grandes |
+| `campos_ignorar` | `[]` | Lista de nomes de colunas a ignorar na ingestão |
 
 Parâmetros de tema relevantes ao RAG:
 
@@ -155,8 +191,8 @@ Parâmetros de rate limit (`config.rate_limit`) aplicados às chamadas de geraç
   mesmo modelo de execução; a diferença é somente a presença do contexto.
 - **RN-R02 — Resposta restrita ao contexto:** o prompt exige que a resposta use
   **estritamente** as informações do contexto recuperado.
-- **RN-R03 — Top-K fixo por configuração:** a recuperação usa `top_k` trechos
-  (padrão 4), definido em configuração.
+- **RN-R03 — Top-K por configuração:** a recuperação seleciona `top_k` trechos
+  (padrão 8), definido em configuração, por MMR (padrão) ou similaridade pura.
 - **RN-R04 — Cronometragem separada:** retrieval e geração são medidos
   separadamente; `tempo_total_rag_s = retrieval + geração`.
 - **RN-R05 — Backoff fora da métrica:** o tempo de espera por rate limit (429)
@@ -200,7 +236,8 @@ melhora a qualidade o suficiente para justificar o overhead de latência?**
 
 - **Recuperação puramente densa:** sem busca lexical (BM25) nem híbrida; termos
   jurídicos exatos (números de artigo, siglas) podem não ser priorizados.
-- **Sem re-ranking:** a ordem de similaridade do vetor é usada como está.
+- **MMR sem re-ranking dedicado:** há diversificação por MMR, mas não um
+  reordenador (cross-encoder) posterior à recuperação.
 - **Passo único:** não há re-recuperação nem refinamento iterativo da consulta.
 - **Contexto por stuffing:** com muitos/grandes trechos, pode-se aproximar o
   limite de contexto do modelo.
@@ -251,7 +288,8 @@ variante contra o RAG atual como *baseline*.
 
 Essas evoluções encaixam nos pontos de extensão já existentes:
 
-- O **retriever** é isolado em `Pipeline._get_retriever` (troca de estratégia).
+- A **recuperação** é isolada em `Pipeline._recuperar_trechos` (troca de
+  estratégia: MMR ou similaridade).
 - A **geração** é isolada em `Pipeline.executar_rag` (montagem de contexto/prompt).
 - Os **parâmetros** são externalizados em `config.json` (novos parâmetros de RAG
   podem ser adicionados sem alterar o fluxo).
@@ -269,8 +307,10 @@ Essas evoluções encaixam nos pontos de extensão já existentes:
 | Item | Localização |
 |------|-------------|
 | Ingestão / chunking / indexação | `pipeline.py` → `Pipeline.indexar_base` |
+| Loader CSV com resumo de campos | `pipeline.py` → `Pipeline._carregar_csv_base`, `Pipeline._resumir_campo` |
+| Cronometragem da indexação | `pipeline.py` → `Pipeline.indexar_base`, `Pipeline._fmt_tempo` |
 | Embeddings | `pipeline.py` → `Pipeline._get_embeddings` |
-| Retriever (Top-K) | `pipeline.py` → `Pipeline._get_retriever` |
+| Recuperação (Top-K + MMR) | `pipeline.py` → `Pipeline._recuperar_trechos` |
 | Retrieval + geração + tempos | `pipeline.py` → `Pipeline.executar_rag` |
 | Montagem do prompt (placeholders) | `pipeline.py` → `Pipeline._formatar_prompt` |
 | Prompt RAG padrão | `config.py` → `DEFAULT_CONFIG["prompts"]["llm_rag"]` |

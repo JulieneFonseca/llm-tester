@@ -250,6 +250,8 @@ def montar_relatorio(
     resultados: list[dict],
     modelo_testado: str,
     modelo_juiz: str,
+    tempos_indexacao: dict[str, Any] | None = None,
+    parecer_final: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Monta o dicionário final conforme o contrato do JSON de saída."""
     metricas = calcular_metricas_globais(resultados)
@@ -259,12 +261,14 @@ def montar_relatorio(
             "modelo_testado": modelo_testado,
             "modelo_juiz": modelo_juiz,
             "total_perguntas": len(resultados),
+            "performance_indexacao": tempos_indexacao or {},
             "performance_temporal_global": {
                 "tempo_medio_llm_padrao_s": metricas.get("tempo_medio_llm_padrao_s", 0.0),
                 "tempo_medio_llm_rag_s": metricas.get("tempo_medio_llm_rag_s", 0.0),
                 "overhead_medio_rag_s": metricas.get("overhead_medio_rag_s", 0.0),
             },
             "metricas_qualidade_global": metricas,
+            "parecer_final_juiz": parecer_final or {},
         },
         "resultados_detalhados": resultados,
     }

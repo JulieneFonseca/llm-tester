@@ -8,7 +8,8 @@ abordagens e as compara com um gabarito oficial usando uma **LLM Juiz**:
 
 1. **LLM Padrão** — pergunta enviada diretamente, sem contexto suplementar.
 2. **LLM com RAG** — pergunta respondida com contexto recuperado de uma base
-   jurídica local (acórdãos/legislação indexados em um vector store).
+   jurídica local (acórdãos/legislação em PDF, TXT ou CSV, indexados em um
+   vector store).
 
 Cada etapa é **cronometrada** (`time.perf_counter()`), permitindo medir o
 *overhead* de latência introduzido pelo pipeline RAG.
@@ -36,7 +37,7 @@ Cada etapa é **cronometrada** (`time.perf_counter()`), permitindo medir o
 ```
 llm-tester/
 ├── data/
-│   ├── base_juridica/      # PDFs/TXTs (acórdãos, legislação) — vector DB
+│   ├── base_juridica/      # PDFs/TXTs/CSVs (acórdãos, legislação) — vector DB
 │   ├── perguntas/
 │   │   └── perguntas.json  # Dataset de perguntas de entrada
 │   └── gabarito/
@@ -99,7 +100,8 @@ Abre 4 abas:
    dinâmica de tempos e notas) e **Execução Individual** (testa uma pergunta
    avulsa, exibindo as respostas da **LLM Padrão** e da **LLM com RAG** lado a
    lado, com tempos, além do detalhamento do Juiz).
-4. **Resultados** — KPIs de qualidade e performance, gráficos comparativos
+4. **Resultados** — **parecer final da LLM Juiz** (abordagem vencedora + texto
+   descritivo), KPIs de qualidade e performance, gráficos comparativos
    (Plotly), *Detalhamento da Avaliação do modelo LLM Juiz* (notas
    intermediárias, sinais, justificativa, respostas geradas e validação de
    processos por pergunta), tabela detalhada (critérios em pares Padrão/RAG)
@@ -130,9 +132,39 @@ python main.py --modelo openai/gpt-oss-20b
 
 ## Configuração do RAG
 
-- Chunk size: **1000 tokens** | Overlap: **150 tokens**
-- Retriever: **Top-K = 4** trechos mais similares
+- Chunk size: **1500 tokens** | Overlap: **300 tokens**
+- Retriever: **Top-K = 8** trechos, com **MMR** (Maximal Marginal Relevance)
+  para diversidade e `mmr_lambda = 0.7`
+- Deduplicação automática de chunks idênticos antes da indexação
 - Vector store: ChromaDB (persistido em `data/chroma_db`)
+
+A busca na consulta é feita **direto na collection do ChromaDB** (dicionários
+crus), evitando falhas de validação quando há registros sem texto no índice, e
+descarta trechos vazios automaticamente.
+
+### Formatos aceitos na base jurídica
+
+A base aceita **PDF**, **TXT** e **CSV**. Para CSVs (ex.: exportações de
+acórdãos), cada linha vira um documento e campos muito grandes (acima de
+`limite_campo_chars`, padrão 500) são **resumidos** automaticamente para gerar
+embeddings de melhor qualidade. O **delimitador** do CSV é configurável
+(`;` por padrão, também aceita `,`, tab ou detecção automática), tanto no
+`config.json` (`parametros.csv_base_juridica`) quanto na aba Configurações.
+
+### Tempos de indexação
+
+A ingestão registra, no log e no relatório JSON (`performance_indexacao`), o
+tempo de cada fase: **carga dos documentos**, **chunking + deduplicação** e
+**indexação vetorial**, além do total (em segundos e minutos) e do *throughput*
+em chunks/s.
+
+### Parecer final da LLM Juiz
+
+Ao término do benchmarking, a LLM Juiz gera um **parecer descritivo
+consolidado** que analisa todas as avaliações e **posiciona qual abordagem
+(LLM Padrão ou LLM com RAG) teve o melhor desempenho geral**, com a
+justificativa das métricas. O parecer aparece no CLI, na aba Resultados e é
+salvo no relatório JSON (`execucao_metadata.parecer_final_juiz`).
 
 ## Configurar outro tema
 
@@ -194,14 +226,14 @@ UNC (`\\servidor\compartilhamento\base`). Basta informar o caminho no campo
 
 Todos os acessos usam caminhos do sistema de arquivos (`pathlib.Path`), portanto:
 
-- **Suportado:** `data/base_juridica/`, `C:\Users\voce\OneDrive\base`,
-  `Z:\base`, `\\servidor\compartilhamento\base`.
+- **Suportado:** `data/base_juridica/` (PDF/TXT/CSV),
+  `C:\Users\voce\OneDrive\base`, `Z:\base`, `\\servidor\compartilhamento\base`.
 - **Não suportado:** acesso via API/URL (`https://drive.google.com/...`,
   links do SharePoint, buckets S3, `gs://`). Para usar a nuvem, sincronize a
   pasta localmente primeiro.
 
 A interface valida o caminho informado e alerta quando ele está vazio, é uma
-URL, não existe ainda ou não contém arquivos PDF/TXT.
+URL, não existe ainda ou não contém arquivos PDF/TXT/CSV.
 
 **Cuidados ao usar nuvem sincronizada:**
 
@@ -219,7 +251,9 @@ Qualidade (0–5): fidelidade, precisão vs. gabarito, completude; além de taxa
 alucinação e fundamentação correta. Performance: tempo da LLM Padrão, tempo de
 retrieval, tempo de geração RAG, tempo total RAG, overhead do RAG e tempo do Juiz.
 O relatório também inclui, por pergunta, a validação de processos citados
-(`validacao_processos_padrao` / `validacao_processos_rag`).
+(`validacao_processos_padrao` / `validacao_processos_rag`); os tempos de
+indexação (`performance_indexacao`); e o **parecer final** consolidado da LLM
+Juiz (`parecer_final_juiz`), com a abordagem vencedora e o texto descritivo.
 
 ## Validação de processos no DataJud
 
