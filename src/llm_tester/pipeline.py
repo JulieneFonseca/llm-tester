@@ -226,6 +226,173 @@ class Pipeline:
             return f"{segundos:.1f}s ({segundos / 60:.1f} min)"
         return f"{segundos:.1f}s"
 
+    # -- Helpers de indexação (reutilizados por indexar_base e indexar_arquivo) --
+
+    def _chroma_settings(self):
+        """
+        Settings do ChromaDB com persistência garantida e telemetria desligada.
+
+        is_persistent + persist_directory são ESSENCIAIS: sem eles o
+        langchain-chroma pode criar um cliente EM MEMÓRIA e os dados somem ao
+        encerrar o processo (foi a causa do banco ficar vazio após "indexar").
+        """
+        from chromadb.config import Settings
+
+        persist_dir = self.params.get("persist_directory", "data/chroma_db")
+        return Settings(
+            anonymized_telemetry=False,
+            is_persistent=True,
+            persist_directory=persist_dir,
+        )
+
+    def _abrir_vector_store(self):
+        """Abre/cria a collection persistente e guarda em self._vector_store."""
+        from langchain_community.vectorstores import Chroma
+
+        persist_dir = self.params.get("persist_directory", "data/chroma_db")
+        collection = self.params.get("collection_name", "pensao_por_morte")
+        self._vector_store = Chroma(
+            collection_name=collection,
+            embedding_function=self._get_embeddings(),
+            persist_directory=persist_dir,
+            client_settings=self._chroma_settings(),
+        )
+        return self._vector_store
+
+    def _carregar_arquivos(self, arquivos_doc, arquivos_csv, log) -> list:
+        """Carrega uma lista de arquivos (PDF/TXT/CSV) em Documents."""
+        from langchain_community.document_loaders import PyPDFLoader, TextLoader
+
+        documentos = []
+        for arq in arquivos_doc:
+            try:
+                if arq.suffix.lower() == ".pdf":
+                    documentos.extend(PyPDFLoader(str(arq)).load())
+                else:
+                    documentos.extend(TextLoader(str(arq), encoding="utf-8").load())
+                log(f"   [ok] {arq.name}")
+            except Exception as exc:  # noqa: BLE001
+                log(f"   [erro] Falha ao ler {arq.name}: {exc}")
+
+        for arq in arquivos_csv:
+            try:
+                docs_csv = self._carregar_csv_base(arq, log)
+                documentos.extend(docs_csv)
+                log(f"   [ok] {arq.name} ({len(docs_csv)} registros)")
+            except Exception as exc:  # noqa: BLE001
+                log(f"   [erro] Falha ao ler {arq.name}: {exc}")
+
+        return documentos
+
+    def _chunkar_documentos(self, documentos: list, log) -> tuple[list, int]:
+        """Aplica chunking + sanitização + deduplicação. Retorna (chunks, n_dup)."""
+        from langchain.text_splitter import RecursiveCharacterTextSplitter
+
+        splitter = RecursiveCharacterTextSplitter(
+            chunk_size=self.params.get("chunk_size", 1000),
+            chunk_overlap=self.params.get("chunk_overlap", 150),
+            separators=["\n\n", "\n", ". ", " ", ""],
+        )
+        chunks = splitter.split_documents(documentos)
+        log(
+            f"[chunks] {len(chunks)} chunks "
+            f"(size={self.params.get('chunk_size')}, "
+            f"overlap={self.params.get('chunk_overlap')})"
+        )
+
+        vistos: set[str] = set()
+        chunks_unicos = []
+        n_vazios = 0
+        for chunk in chunks:
+            conteudo = chunk.page_content
+            if conteudo is None:
+                n_vazios += 1
+                continue
+            texto_norm = str(conteudo).strip()
+            if not texto_norm:
+                n_vazios += 1
+                continue
+            chunk.page_content = str(conteudo)
+            if texto_norm not in vistos:
+                vistos.add(texto_norm)
+                chunks_unicos.append(chunk)
+        n_duplicados = len(chunks) - len(chunks_unicos) - n_vazios
+        if n_vazios > 0:
+            log(f"[dedup] {n_vazios} chunk(s) sem conteúdo descartado(s).")
+        if n_duplicados > 0:
+            log(f"[dedup] {n_duplicados} chunks duplicados removidos. "
+                f"Restam {len(chunks_unicos)} únicos.")
+        return chunks_unicos, n_duplicados
+
+    def _inserir_chunks_lotes(self, chunks: list, log) -> float:
+        """
+        Insere os chunks no vector store em LOTES (gravação incremental),
+        emitindo progresso com ETA. Retorna o tempo total de indexação (s).
+
+        Motivo dos lotes: gerar embeddings de dezenas de milhares de chunks de
+        uma vez estoura a RAM. Em blocos de `index_batch_size`, a memória é
+        liberada entre um lote e outro.
+        """
+        import datetime as _dt
+
+        batch_size = int(self.params.get("index_batch_size", 500))
+        total_chunks = len(chunks)
+        log(f"[index] Indexando {total_chunks} chunks no ChromaDB "
+            f"em lotes de {batch_size}...")
+
+        t_index_ini = time.perf_counter()
+        n_lotes = (total_chunks + batch_size - 1) // batch_size
+        for i_lote, inicio in enumerate(range(0, total_chunks, batch_size), start=1):
+            lote = chunks[inicio : inicio + batch_size]
+
+            t_lote_ini = time.perf_counter()
+            self._vector_store.add_documents(lote)
+            dt_lote = time.perf_counter() - t_lote_ini
+
+            processados = min(inicio + batch_size, total_chunks)
+            pct = (processados / total_chunks) * 100 if total_chunks else 100.0
+            parcial = time.perf_counter() - t_index_ini
+            vel = processados / parcial if parcial > 0 else 0.0
+            restantes = total_chunks - processados
+            eta_s = restantes / vel if vel > 0 else 0.0
+            agora = _dt.datetime.now().strftime("%H:%M:%S")
+
+            log(
+                f"   [index {agora}] lote {i_lote}/{n_lotes} | "
+                f"{processados}/{total_chunks} ({pct:.0f}%) | "
+                f"lote={dt_lote:.1f}s | {vel:.0f} chunks/s | "
+                f"decorrido={self._fmt_tempo(parcial)} | "
+                f"ETA={self._fmt_tempo(eta_s)}"
+            )
+
+        return time.perf_counter() - t_index_ini
+
+    def _remover_source(self, caminho: Path, log) -> int:
+        """
+        Remove do ChromaDB todos os chunks cujo metadado `source` corresponde
+        ao arquivo dado. Usado antes de reindexar um arquivo, para evitar
+        duplicatas. Retorna quantos chunks foram removidos.
+        """
+        col = self._vector_store._collection
+        # O `source` gravado é o caminho como string. Tentamos ambas as formas
+        # (str(caminho) e o caminho absoluto) por robustez.
+        candidatos = {str(caminho), str(caminho.resolve())}
+        removidos = 0
+        for src in candidatos:
+            try:
+                existentes = col.get(where={"source": src})
+                ids = existentes.get("ids", []) or []
+                if ids:
+                    col.delete(ids=ids)
+                    removidos += len(ids)
+            except Exception as exc:  # noqa: BLE001
+                log(f"   [aviso] Falha ao remover chunks de {src}: {exc}")
+        if removidos:
+            log(f"[limpeza] {removidos} chunk(s) antigos de '{caminho.name}' removidos.")
+        return removidos
+
+    # -- Indexação completa --------------------------------------------------
+
     def indexar_base(
         self,
         diretorio: str,
@@ -235,23 +402,18 @@ class Pipeline:
         """
         Carrega documentos (PDF, TXT, CSV), aplica chunking e indexa no ChromaDB.
         Retorna o número de chunks indexados.
+
+        - forcar=False: se já existe base indexada, apenas carrega (não reindexa).
+        - forcar=True: reprocessa TODA a base do zero.
         """
         log = log or (lambda m: None)
-        from langchain_community.document_loaders import PyPDFLoader, TextLoader
-        from langchain.text_splitter import RecursiveCharacterTextSplitter
-        from langchain_community.vectorstores import Chroma
 
         persist_dir = self.params.get("persist_directory", "data/chroma_db")
-        collection = self.params.get("collection_name", "pensao_por_morte")
 
         if not forcar and Path(persist_dir).exists():
             t0 = time.perf_counter()
             log("[base] Vetor existente encontrado. Carregando...")
-            self._vector_store = Chroma(
-                collection_name=collection,
-                embedding_function=self._get_embeddings(),
-                persist_directory=persist_dir,
-            )
+            self._abrir_vector_store()
             n_chunks = self._vector_store._collection.count()
             self.tempos_indexacao = {
                 "reindexado": False,
@@ -269,102 +431,57 @@ class Pipeline:
 
         t_inicio = time.perf_counter()
 
-        documentos = []
         arquivos_doc = list(base.glob("**/*.pdf")) + list(base.glob("**/*.txt"))
         arquivos_csv = list(base.glob("**/*.csv"))
         total_arquivos = len(arquivos_doc) + len(arquivos_csv)
         log(f"[docs] {total_arquivos} arquivo(s) na base jurídica "
             f"({len(arquivos_doc)} PDF/TXT + {len(arquivos_csv)} CSV).")
 
+        # Reindexação total: começa do zero, APAGANDO a collection inteira.
+        #
+        # IMPORTANTE: deletar por IDs (col.get()+col.delete(ids)) é frágil — o
+        # col.get() sem paginação não retorna todos os IDs quando há dezenas de
+        # milhares de chunks, deixando lixo para trás e ACUMULANDO duplicatas a
+        # cada reindexação. Apagar a collection inteira e recriá-la é o único
+        # jeito confiável de garantir um banco limpo.
+        collection = self.params.get("collection_name", "pensao_por_morte")
+        if Path(persist_dir).exists():
+            log("[base] Reindexação total: apagando collection existente...")
+            try:
+                import chromadb
+                client = chromadb.PersistentClient(
+                    path=persist_dir, settings=self._chroma_settings()
+                )
+                try:
+                    antes = client.get_collection(collection).count()
+                except Exception:
+                    antes = 0
+                client.delete_collection(collection)
+                log(f"[base] Collection '{collection}' apagada ({antes} chunk(s)).")
+            except Exception as exc:  # noqa: BLE001
+                log(f"[aviso] Falha ao apagar collection (pode não existir): {exc}")
+
+        # (Re)cria a collection vazia.
+        self._abrir_vector_store()
+
         t_carga_ini = time.perf_counter()
-
-        # Carregar PDFs e TXTs
-        for arq in arquivos_doc:
-            try:
-                if arq.suffix.lower() == ".pdf":
-                    documentos.extend(PyPDFLoader(str(arq)).load())
-                else:
-                    documentos.extend(
-                        TextLoader(str(arq), encoding="utf-8").load()
-                    )
-                log(f"   [ok] {arq.name}")
-            except Exception as exc:  # noqa: BLE001
-                log(f"   [erro] Falha ao ler {arq.name}: {exc}")
-
-        # Carregar CSVs (com resumo automático de campos grandes)
-        for arq in arquivos_csv:
-            try:
-                docs_csv = self._carregar_csv_base(arq, log)
-                documentos.extend(docs_csv)
-                log(f"   [ok] {arq.name} ({len(docs_csv)} registros)")
-            except Exception as exc:  # noqa: BLE001
-                log(f"   [erro] Falha ao ler {arq.name}: {exc}")
-
+        documentos = self._carregar_arquivos(arquivos_doc, arquivos_csv, log)
         if not documentos:
             raise ValueError(
                 f"Nenhum documento carregado de '{diretorio}'. "
                 "Adicione PDFs, TXTs ou CSVs à base jurídica."
             )
-
         tempo_carga = time.perf_counter() - t_carga_ini
         log(f"[tempo] Carga dos documentos: {self._fmt_tempo(tempo_carga)} "
             f"({len(documentos)} documentos).")
 
         t_chunk_ini = time.perf_counter()
-        splitter = RecursiveCharacterTextSplitter(
-            chunk_size=self.params.get("chunk_size", 1000),
-            chunk_overlap=self.params.get("chunk_overlap", 150),
-            separators=["\n\n", "\n", ". ", " ", ""],
-        )
-        chunks = splitter.split_documents(documentos)
-        log(
-            f"[chunks] {len(chunks)} chunks "
-            f"(size={self.params.get('chunk_size')}, "
-            f"overlap={self.params.get('chunk_overlap')})"
-        )
-
-        # Sanitização + deduplicação:
-        #  - descarta chunks sem conteúdo (page_content None ou vazio), que
-        #    quebrariam a validação do Document/ChromaDB;
-        #  - remove chunks com conteúdo idêntico (mantém o primeiro).
-        vistos: set[str] = set()
-        chunks_unicos = []
-        n_vazios = 0
-        for chunk in chunks:
-            conteudo = chunk.page_content
-            if conteudo is None:
-                n_vazios += 1
-                continue
-            texto_norm = str(conteudo).strip()
-            if not texto_norm:
-                n_vazios += 1
-                continue
-            # Garante que o page_content seja sempre string válida.
-            chunk.page_content = str(conteudo)
-            if texto_norm not in vistos:
-                vistos.add(texto_norm)
-                chunks_unicos.append(chunk)
-        n_duplicados = len(chunks) - len(chunks_unicos) - n_vazios
-        if n_vazios > 0:
-            log(f"[dedup] {n_vazios} chunk(s) sem conteúdo descartado(s).")
-        if n_duplicados > 0:
-            log(f"[dedup] {n_duplicados} chunks duplicados removidos. "
-                f"Restam {len(chunks_unicos)} únicos.")
-        chunks = chunks_unicos
+        chunks, n_duplicados = self._chunkar_documentos(documentos, log)
         tempo_chunk = time.perf_counter() - t_chunk_ini
         log(f"[tempo] Chunking + deduplicação: {self._fmt_tempo(tempo_chunk)}.")
 
-        log("[index] Indexando no vector store (ChromaDB)...")
-        t_index_ini = time.perf_counter()
-        self._vector_store = Chroma.from_documents(
-            documents=chunks,
-            embedding=self._get_embeddings(),
-            collection_name=collection,
-            persist_directory=persist_dir,
-        )
-        tempo_index = time.perf_counter() - t_index_ini
+        tempo_index = self._inserir_chunks_lotes(chunks, log)
         tempo_total = time.perf_counter() - t_inicio
-
         chunks_por_s = round(len(chunks) / tempo_index, 1) if tempo_index else 0.0
 
         log(f"[ok] {len(chunks)} chunks indexados.")
@@ -388,6 +505,73 @@ class Pipeline:
             "tempo_total_indexacao_s": round(tempo_total, 2),
             "tempo_total_indexacao_min": round(tempo_total / 60, 2),
             "chunks_por_segundo_indexacao": chunks_por_s,
+        }
+        return len(chunks)
+
+    # -- Indexação incremental (por arquivo) ---------------------------------
+
+    def indexar_arquivo(
+        self,
+        caminho: str,
+        log: Callable[[str], None] | None = None,
+    ) -> int:
+        """
+        Indexa (ou reindexa) UM único arquivo, sem afetar o resto da base.
+
+        Fluxo:
+          1. Abre a collection existente (cria se não existir).
+          2. Remove os chunks antigos daquele arquivo (evita duplicatas).
+          3. Carrega, faz chunking e insere só aquele arquivo.
+
+        Retorna o número de chunks inseridos para o arquivo.
+        """
+        log = log or (lambda m: None)
+
+        arq = Path(caminho)
+        if not arq.exists():
+            raise FileNotFoundError(f"Arquivo não encontrado: {caminho}")
+
+        t_inicio = time.perf_counter()
+        log(f"[arquivo] Indexação incremental de: {arq.name}")
+
+        # 1. Abre a collection (persistente).
+        self._abrir_vector_store()
+
+        # 2. Remove versão antiga deste arquivo, se houver.
+        self._remover_source(arq, log)
+
+        # 3. Carrega o arquivo conforme o tipo.
+        suf = arq.suffix.lower()
+        if suf == ".csv":
+            arquivos_doc, arquivos_csv = [], [arq]
+        elif suf in (".pdf", ".txt"):
+            arquivos_doc, arquivos_csv = [arq], []
+        else:
+            raise ValueError(f"Tipo de arquivo não suportado: {suf}")
+
+        t_carga_ini = time.perf_counter()
+        documentos = self._carregar_arquivos(arquivos_doc, arquivos_csv, log)
+        if not documentos:
+            raise ValueError(f"Nenhum conteúdo carregado de '{arq.name}'.")
+        tempo_carga = time.perf_counter() - t_carga_ini
+
+        chunks, _ = self._chunkar_documentos(documentos, log)
+        tempo_index = self._inserir_chunks_lotes(chunks, log)
+        tempo_total = time.perf_counter() - t_inicio
+
+        log(f"[ok] {len(chunks)} chunks de '{arq.name}' indexados "
+            f"em {self._fmt_tempo(tempo_total)} "
+            f"(carga {tempo_carga:.1f}s + indexação {tempo_index:.1f}s).")
+
+        total_atual = self._vector_store._collection.count()
+        log(f"[base] Total de chunks na base agora: {total_atual}")
+
+        self.tempos_indexacao = {
+            "reindexado": True,
+            "arquivo": arq.name,
+            "total_chunks": len(chunks),
+            "total_chunks_base": total_atual,
+            "tempo_total_indexacao_s": round(tempo_total, 2),
         }
         return len(chunks)
 

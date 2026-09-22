@@ -1,7 +1,15 @@
 # Ambiente virtual
 venv/
 .venv/
+.venv2/
 env/
+
+# Pasta duplicada do projeto (não versionar)
+LLM-tester/
+
+# Arquivos temporários de diagnóstico
+_*.txt
+_*.log
 
 # Variáveis de ambiente
 .env
@@ -17,6 +25,9 @@ build/
 
 # Vector store (dados indexados)
 data/chroma_db/
+
+# Base jurídica (documentos-fonte: PDFs/CSVs/TXTs grandes, mantidos localmente)
+data/base_juridica/
 
 # Resultados (podem ser regenerados)
 outputs/*.json

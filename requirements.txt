@@ -10,6 +10,19 @@ langchain-huggingface==0.1.2
 chromadb==0.5.20
 sentence-transformers==3.3.1
 
+# === Stack de ML fixada (compatível com numpy 1.26 / Python 3.11) ===
+# IMPORTANTE: estas versões DEVEM permanecer fixadas juntas. Deixar torch,
+# transformers, numpy, scipy ou scikit-learn soltos faz o pip puxar versões
+# recentes (torch 2.14 / transformers 4.57 / sklearn 1.9 / scipy 1.17) que
+# exigem numpy 2.x e travam o import (incompatibilidade de ABI das extensões C).
+numpy==1.26.4
+scipy==1.13.1
+scikit-learn==1.5.2
+torch==2.2.2
+transformers==4.44.2
+tokenizers==0.19.1
+huggingface-hub==0.25.2
+
 # === Provider (Groq) ===
 groq==0.13.1
 
@@ -23,7 +36,6 @@ rich==13.9.4
 # === Dados & métricas ===
 pandas==2.2.3
 plotly==5.24.1
-numpy  # usado no MMR manual da recuperação (Pipeline._recuperar_trechos); versão resolvida pelas deps transitivas (chromadb/pandas)
 
 # === Utilidades ===
 python-dotenv==1.0.1

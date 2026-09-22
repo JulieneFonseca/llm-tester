@@ -3,29 +3,218 @@
     "tema": "Pensão por Morte",
     "area": "Direito Previdenciário",
     "descricao": "Respostas oficiais de referência e critérios de avaliação",
-    "total_perguntas": 3
+    "total_perguntas": 30
   },
   "gabarito": [
     {
       "id": "Q01",
-      "pergunta": "O cônjuge separado de fato tem direito à pensão por morte?",
-      "gabarito_oficial": "Sim, o cônjuge separado de fato mantém o direito à pensão por morte, desde que comprove a dependência econômica em relação ao segurado falecido, conforme entendimento consolidado (Súmula 336 do STJ).",
-      "acordao": "STJ - Súmula 336",
-      "criterio_fidelidade": "A resposta deve confirmar o direito condicionado à comprovação de dependência econômica e, idealmente, citar a Súmula 336 do STJ."
+      "pergunta": "Entrei com pedido de pensão por morte no INSS. O contribuinte faleceu e comprovei a qualidade de segurado. Eu tinha relação de união estável com o falecido. Indiquei razoável conjunto probatório material da relação de fato. Indiquei um rol de testemunhas que corroboraram a verdade de que havia uma união estável de fato. INSS negou o pedido de pensão por morte. A autarquia não reconheceu a união estável. Informe meus direitos sobre o tema, trazendo 3 decisões julgados pelo tribunal para que eu possa incorporar na minha petição. Ainda informe o sentimento relacionado a estas decisões, sendo negativo para probabilidade de derrota e positivo em probabilidade de sucesso em uma eventual ação judicial.",
+      "gabarito_oficial": "PREVIDENCIÁRIO E PROCESSUAL CIVIL. RECURSO DE APELAÇÃO. PENSÃO POR MORTE. ÓBITO EM 10/11/2022. QUALIDADE DE SEGURADO COMPROVADA. UNIÃO ESTÁVEL. INÍCIO RAZOÁVEL DE PROVA MATERIAL CONFIRMADO POR MEIO DE PROVA TESTEMUNHAL. REQUISITOS LEGAIS COMPROVADOS. BENEFÍCIO DEVIDO. DIB. JUROS DE MORA E CORREÇÃO MONETÁRIA. APELAÇÃO DESPROVIDA",
+      "acordao": "TRF / Jurisprudência Previdenciária",
+      "criterio_fidelidade": "A resposta deve confirmar o direito à pensão por morte mediante comprovação de união estável por início de prova material corroborada por prova testemunhal."
     },
     {
       "id": "Q02",
-      "pergunta": "É possível a concessão de pensão por morte a companheiro em união estável homoafetiva?",
-      "gabarito_oficial": "Sim. O STF reconheceu a união estável homoafetiva como entidade familiar (ADPF 132 e ADI 4277), garantindo ao companheiro do mesmo sexo os mesmos direitos previdenciários, incluindo a pensão por morte.",
-      "acordao": "STF - ADPF 132 / ADI 4277",
-      "criterio_fidelidade": "A resposta deve confirmar a possibilidade, citar o reconhecimento pelo STF e mencionar a equiparação de direitos previdenciários."
+      "pergunta": "Entrei com pedido de pensão por morte no INSS. O contribuinte faleceu e comprovei a qualidade de segurado. Eu tinha relação de união estável com o falecido. Comprovei minha dependência econômica com o falecido. INSS negou o pedido de pensão por morte. A autarquia não reconheceu a união estável. Informe meus direitos sobre o tema, trazendo 3 decisões julgados pelo tribunal para que eu possa incorporar na minha petição. Ainda informe o sentimento relacionado a estas decisões, sendo negativo para probabilidade de derrota e positivo em probabilidade de sucesso em uma eventual ação judicial.",
+      "gabarito_oficial": "PREVIDENCIÁRIO. PENSÃO POR MORTE. UNIÃO ESTÁVEL COMPROVADA. DEPENDÊNCIA ECONÔMICA PRESUMIDA",
+      "acordao": "Jurisprudência Previdenciária",
+      "criterio_fidelidade": "A resposta deve confirmar a concessão de pensão por morte para união estável com dependência econômica presumida."
     },
     {
       "id": "Q03",
-      "pergunta": "A dependência econômica do cônjuge precisa ser comprovada para a concessão da pensão por morte?",
-      "gabarito_oficial": "Não. A dependência econômica do cônjuge é presumida por lei, nos termos do art. 16, § 4º, da Lei 8.213/91, não sendo exigida comprovação de dependência financeira para a concessão do benefício.",
-      "acordao": "Lei 8.213/91, art. 16, § 4º",
-      "criterio_fidelidade": "A resposta deve indicar a presunção legal de dependência econômica do cônjuge e o dispositivo legal aplicável."
+      "pergunta": "Entrei com pedido de pensão por morte no INSS. O contribuinte faleceu há 8 anos; Comprovei a qualidade de segurado. Eu tive com o falecido um filho. Meu filho é inválido. INSS negou o pedido de pensão por morte. A autarquia alegou que se passaram vários anos e transcorreu a prescrição, visto que meu filho já alcançou a maioridade. Informe meus direitos sobre o tema, considerando que meu filho é inválido. Traga 3 decisões julgados pelo tribunal para que eu possa incorporar na minha petição para o TRF. Ainda informe o sentimento relacionado a estas decisões, sendo negativo para probabilidade de derrota e positivo em probabilidade de sucesso em uma eventual ação judicial.",
+      "gabarito_oficial": "PREVIDENCIÁRIO. PROCESSUAL CIVIL. PENSÃO POR MORTE. FILHO MAIOR INVÁLIDO. PRESCRIÇÃO AFASTADA. TERMO INICIAL DO BENEFÍCIO. LOAS. CORREÇÃO MONETÁRIA E JUROS DE MORA.",
+      "acordao": "TRF - Filho Maior Inválido",
+      "criterio_fidelidade": "A resposta deve afastar a prescrição para o filho maior inválido e reconhecer o direito ao benefício."
+    },
+    {
+      "id": "Q04",
+      "pergunta": "Entrei com pedido de pensão por morte no INSS. Comprovei que o falecido era contribuinte e comprovei a qualidade de segurado. Atualmente tenho pensão por morte havida do matrimônio anterior; Também tenho benefício previdenciário de aposentadoria; INSS negou o pedido de pensão por morte. A autarquia alegou que não é possível cumular benefícios, me obrigando a escolher pelo benefício mais vantajoso. Informe meus direitos sobre o tema, considerando que já possuo pensão por morte de outro matrimônio, além de uma aposentadoria pelo regime geral, pois tenho 62 anos. Traga 3 decisões julgados pelo tribunal para que eu possa incorporar na minha petição para o TRF. Ainda informe o sentimento relacionado a estas decisões, sendo negativo para probabilidade de derrota e positivo em probabilidade de sucesso em uma eventual ação judicial.",
+      "gabarito_oficial": "PREVIDENCIÁRIO E PROCESSUAL CIVIL. RECURSO DE APELAÇÃO. PENSÃO POR MORTE. ÓBITO EM 13.05.2017. PERCEPÇÃO DE MAIS DE UMA PENSÃO DEIXADA POR COMPANHEIRO. VEDAÇÃO. DIREITO DE OPÇÃO PELA MAIS VANTAJOSA. POSSIBILIDADE.",
+      "acordao": "Jurisprudência - Vedação de cumulação de mais de uma pensão de cônjuge/companheiro",
+      "criterio_fidelidade": "A resposta deve reconhecer a vedação de cumulação de mais de uma pensão por morte deixada por cônjuge/companheiro, exigindo opção pela mais vantajosa."
+    },
+    {
+      "id": "Q05",
+      "pergunta": "Entrei com dois pedidos de pensão por morte no INSS. Um pedido relativo a meu esposo que faleceu. Comprovei que ele era contribuinte e comprovei a qualidade de segurado especial. Outro pedido relativo a meu filho que faleceu. Comprovei que ele era contribuinte e comprovei a qualidade de segurado. INSS negou o pedido de pensão por morte. A autarquia alegou que não é possível cumular benefícios, me obrigando a escolher pelo benefício mais vantajoso. Informe meus direitos sobre o tema. Traga 3 decisões julgados pelo tribunal para que eu possa incorporar na minha petição para o TRF. Ainda informe o sentimento relacionado a estas decisões, sendo negativo para probabilidade de derrota e positivo em probabilidade de sucesso em uma eventual ação judicial.",
+      "gabarito_oficial": "PREVIDENCIÁRIO. RECURSO DE APELAÇÃO. PENSÃO POR MORTE. COMPROVAÇÃO DA QUALIDADE DE SEGURADO ESPECIAL DO CÔNJUGE INSTITUIDOR. CUMULAÇÃO DE PENSÃO POR MORTE DE MARIDO E DE FILHO. POSSIBILIDADE. PROVA MATERIAL CORROBORADA POR UNÍSSONA PROVA TESTEMUNHAL. SENTENÇA CONFIRMADA.",
+      "acordao": "TRF - Cumulação de pensão de cônjuge e de filho",
+      "criterio_fidelidade": "A resposta deve admitir a cumulação de pensão por morte de marido com a de filho."
+    },
+    {
+      "id": "Q06",
+      "pergunta": "Entrei com pedido de pensão por morte no INSS. O falecido era contribuinte e comprovei a qualidade de segurado. Nós mantínhamos uma relação de união estável, comprovada por mais de 10 anos. Fiquei sabendo que ele também tinha relação de união estável com outra mulher. A outra companheira entrou com pedido de pensão por morte, sendo deferida para ela a pensão; Entrei com pedido para receber 50% da pensão pelo menos. INSS negou o pedido de pensão por morte. A autarquia alegou que não é possível haver uniões estáveis concomitante, negando meu pedido administrativamente. Informe meus direitos sobre o tema. Traga 3 decisões julgados pelo tribunal para que eu possa incorporar na minha petição para o TRF. Ainda informe o sentimento relacionado a estas decisões, sendo negativo para probabilidade de derrota e positivo em probabilidade de sucesso em uma eventual ação judicial.",
+      "gabarito_oficial": "PREVIDENCIÁRIO. PENSÃO POR MORTE. UNIÕES ESTÁVEIS CONCOMITANTES. ADMISSIBILIDADE. UNIÃO ESTÁVEL DA CO RÉ COMPROVADA. PENSÃO POR MORTE DEVIDA À AMBAS. RECURSO DA PARTE AUTORA NÃO PROVIDO.",
+      "acordao": "Jurisprudência - Uniões estáveis concomitantes",
+      "criterio_fidelidade": "A resposta deve reconhecer a admissibilidade de uniões estáveis concomitantes com rateio do benefício."
+    },
+    {
+      "id": "Q07",
+      "pergunta": "Entrei com pedido de pensão por morte no INSS. O falecido era contribuinte e comprovei a qualidade de segurado. Percebi que a pessoa que eu ficava esporadicamente havia outras 10 famílias. Ele havia 10 uniões estáveis. Todas as ex-companheiras entraram com pedido de pensão por morte. Todas as ex-companheira conseguiram a pensão. A pensão foi dividida por 10. Vendo a possibilidade de conseguir entrar nessa pensão eu ingressei com o pedido no INSS. INSS negou o pedido de pensão por morte. A autarquia alegou que não foi possível haver comprovar a união estável, negando meu pedido administrativamente. O juiz de primeiro grau negou meu pedido com mesmo argumento. Informe meus direitos sobre o tema. Traga 3 decisões julgados pelo tribunal para que eu possa incorporar na minha petição para o TRF. Ainda informe o sentimento relacionado a estas decisões, sendo negativo para probabilidade de derrota e positivo em probabilidade de sucesso em uma eventual ação judicial.",
+      "gabarito_oficial": "PREVIDENCIÁRIO. PENSÃO POR MORTE. UNIÕES ESTÁVEIS CONCOMITANTES. ADMISSIBILIDADE. UNIÃO ESTÁVEL DA CO RÉ COMPROVADA. PENSÃO POR MORTE DEVIDA À AMBAS. RECURSO DA PARTE AUTORA NÃO PROVIDO.",
+      "acordao": "Jurisprudência - Ausência de comprovação de união estável",
+      "criterio_fidelidade": "A resposta deve manter o indeferimento pela falta de comprovação de união estável efetiva."
+    },
+    {
+      "id": "Q08",
+      "pergunta": "Entrei com pedido de pensão por morte no INSS. O falecido era contribuinte e comprovei a qualidade de segurado. Ele estava separado de fato há mais de 10 anos. Nós mantínhamos uma relação de união estável, comprovada por mais de 10 anos, desde a separação de fato. A ex-esposa, usando documento do falecido antigo, entrou com pedido de pensão por morte, sendo deferida para ela a pensão; Entrei com pedido para cancelar essa pensão pois eles estavam separados de fato há mais de 10 anos; Na verdade, a pensão é devida a mim , que estive com ele com relação de união estável. INSS negou a mim o pedido de pensão por morte. A autarquia alegou que não foi possível comprovar a relação de união estável. Também informou que a ex-esposa comprovou a relação de casamento que estava formalmente ativa. Informe meus direitos sobre o tema. Traga 3 decisões julgados pelo tribunal para que eu possa incorporar na minha petição para o TRF. Ainda informe o sentimento relacionado a estas decisões, sendo negativo para probabilidade de derrota e positivo em probabilidade de sucesso em uma eventual ação judicial.",
+      "gabarito_oficial": "PREVIDENCIÁRIO. PROCESSUAL CIVIL. JUSTIÇA GRATUITA. DEFERIMENTO. PENSÃO POR MORTE. QUALIDADE DE SEGURADO INCONTROVERSA. SEPARAÇÃO DE FATO DA EX-ESPOSA E MANUTENÇÃO DA UNIÃO ESTÁVEL ATE A DATA DO FALECIMENTO. COMPANHEIRA. DEPENDÊNCIA ECONÔMICA PRESUMIDA. BENEFÍCIO DEVIDO. SENTENÇA MANTIDA. APELAÇÃO NÃO PROVIDA.",
+      "acordao": "TRF - Separação de fato e união estável",
+      "criterio_fidelidade": "A resposta deve reconhecer o direito da companheira em união estável diante da separação de fato da ex-esposa."
+    },
+    {
+      "id": "Q09",
+      "pergunta": "Entrei com pedido de pensão por morte no INSS. Meu pai desapareceu. Ele trabalhava em uma barragem em que ocorreu um desastre. O corpo não foi encontrado. Não sabemos o paredeiro dele há mais de 3 anos. Ele é contribuinte, onde comprovei a qualidade de segurado do INSS. INSS negou a mim o pedido de pensão por morte. A autarquia considerou que não há sentença de morte presumida; porém o judiciário está extremamente moroso com o processo. Informe meus direitos sobre o tema. Traga 3 decisões julgados pelo tribunal para que eu possa incorporar na minha petição para o TRF. Ainda informe o sentimento relacionado a estas decisões, sendo negativo para probabilidade de derrota e positivo em probabilidade de sucesso em uma eventual ação judicial.",
+      "gabarito_oficial": "Lei 8.213/91, art. 78, § 1º: Mediante prova do desaparecimento do segurado em consequência de acidente, desastre ou catástrofe, seus dependentes farão jus à pensão provisória independentemente da declaração e do prazo de ausência.",
+      "acordao": "Lei 8.213/91 - Art. 78",
+      "criterio_fidelidade": "A resposta deve citar o art. 78, § 1º da Lei 8.213/91 sobre pensão provisória em caso de desastre ou catástrofe."
+    },
+    {
+      "id": "Q10",
+      "pergunta": "Entrei com pedido de pensão por morte no INSS. Meu pai desapareceu. Ele viajou de carro para outro estado. O carro foi encontrado todo danificado, onde se envolveu em uma batida (colisão). O corpo não foi encontrado. Não sabemos o paredeiro dele há mais de 3 anos. Ele é contribuinte, onde comprovei a qualidade de segurado do INSS. INSS negou a mim o pedido de pensão por morte. A autarquia considerou que não há sentença de morte presumida; porém o judiciário está extremamente moroso com o processo. Informe meus direitos sobre o tema. Traga 3 decisões julgados pelo tribunal para que eu possa incorporar na minha petição para o TRF. Ainda informe o sentimento relacionado a estas decisões, sendo negativo para probabilidade de derrota e positivo em probabilidade de sucesso em uma eventual ação judicial.",
+      "gabarito_oficial": "Lei 8.213/91, art. 78, § 1º: Em caso de acidente, desastre ou catástrofe, os dependentes fazem jus à pensão provisória independentemente de declaração judicial prévia.",
+      "acordao": "Lei 8.213/91 - Art. 78, § 1º",
+      "criterio_fidelidade": "A resposta deve reconhecer o direito à pensão provisória por morte presumida decorrente de acidente automobilístico."
+    },
+    {
+      "id": "Q11",
+      "pergunta": "Entrei com pedido de pensão por morte no INSS. Meu pai saiu de casa há 2 meses. Ele viajou de carro para outro estado. Ele não deu notícias e estamos preocupados. Não encontramos vestígios de acidente, tragédia, desastres, ou algo similar. Mas amamos nosso pai e precisamos urgente de dinheiro para manter os alimentos de nossa casa. Estamos passando necessidade, com fome, sede e com muitas dívidas em aberto para pagar. Ele é contribuinte, onde comprovei a qualidade de segurado do INSS. INSS negou a mim o pedido de pensão por morte. A autarquia considerou que não há sentença de morte presumida; porém já ingressei no judiciário com pedido limiar, que foi negada, considero que o judiciário está extremamente moroso com o processo. Informe meus direitos sobre o tema. Traga 3 decisões julgados pelo tribunal para que eu possa incorporar na minha petição para o TRF. Ainda informe o sentimento relacionado a estas decisões, sendo negativo para probabilidade de derrota e positivo em probabilidade de sucesso em uma eventual ação judicial.",
+      "gabarito_oficial": "Lei 8.213/91, art. 78: Exige-se o prazo de ausência de 6 meses ou comprovação de acidente/catástrofe para a pensão provisória por morte presumida.",
+      "acordao": "Lei 8.213/91 - Art. 78",
+      "criterio_fidelidade": "A resposta deve ponderar os requisitos legais de prazo de ausência para morte presumida sem vestígios de catástrofe."
+    },
+    {
+      "id": "Q12",
+      "pergunta": "Entrei com pedido de pensão por morte no INSS. Meu pai desapareceu, sem deixar vestígio. Não foi possível comprovar morte presumida. Não temos prova de que houve acidente, desastre ou catástrofe. Apenas sumiu sem deixar vestígio. Não sabemos o paredeiro dele há mais de 3 anos. Ele é contribuinte, onde comprovei a qualidade de segurado do INSS. INSS negou a mim o pedido de pensão por morte. A autarquia considerou que não há sentença de morte presumida; O Juiz de primeiro grau não gerou declaração de ausência. Informe meus direitos sobre o tema. Traga 3 decisões julgados pelo tribunal para que eu possa incorporar na minha petição para o TRF. Ainda informe o sentimento relacionado a estas decisões, sendo negativo para probabilidade de derrota e positivo em probabilidade de sucesso em uma eventual ação judicial.",
+      "gabarito_oficial": "Ausência declarada judicialmente nos termos do Código Civil e art. 78 da Lei 8.213/91 para concessão de pensão provisória após o prazo legal.",
+      "acordao": "Lei 8.213/91 - Art. 78",
+      "criterio_fidelidade": "A resposta deve abordar a ausência e a necessidade de declaração judicial."
+    },
+    {
+      "id": "Q13",
+      "pergunta": "Entrei com pedido de pensão por morte no INSS. O meu esposo faleceu 10 meses antes do nascimento do filho. Pretendo receber retroativamente o benefício desde a data do falecimento. Ele é contribuinte, onde comprovei a qualidade de segurado do INSS. INSS negou a mim o pedido de pensão por morte com retroatividade. A autarquia considerou que não existe retroatividade pois o filho ainda não tinha personalidade e capacidade civil. Informe meus direitos sobre o tema. Traga 3 decisões julgados pelo tribunal para que eu possa incorporar na minha petição para o TRF. Ainda informe o sentimento relacionado a estas decisões, sendo negativo para probabilidade de derrota e positivo em probabilidade de sucesso em uma eventual ação judicial.",
+      "gabarito_oficial": "INSS deve pagar parcelas atrasadas de pensão a menor que nasceu após a morte do genitor. A 2ª Turma do TRF1 garantiu o pagamento retroativo à data da morte.",
+      "acordao": "TRF1 - Pensão por morte a filho póstumo",
+      "criterio_fidelidade": "A resposta deve garantir o direito do filho concebido/nascido após o óbito à pensão retroativa desde a data do falecimento."
+    },
+    {
+      "id": "Q14",
+      "pergunta": "Entrei com pedido de pensão por morte no INSS. O meu esposo faleceu há 4 anos e 11 meses. Ele trabalhava em um emprego insalubre quando era vivo. O regime de trabalho era regido pela CLT. Ele era contribuinte, onde comprovei a qualidade de segurado do INSS. Quero revisar o valor da aposentadoria à ordem de 20%, retroagindo para a data de concessão do benefício. Quero receber de forma indenizada o valor divergente, corrigido e atualizado monetariamente. INSS negou a mim a revisão do benefício. A autarquia considerou a ocorrência da prescrição quinquenal, bem como a inexistência de emprego insalubre. O juiz de primeiro grau considerou procedente as alegações do INSS, não acolhendo meus pedidos na petição inicial. Informe meus direitos sobre o tema. Traga 3 decisões julgados pelo tribunal para que eu possa incorporar na minha petição para o TRF. Ainda informe o sentimento relacionado a estas decisões, sendo negativo para probabilidade de derrota e positivo em probabilidade de sucesso em uma eventual ação judicial.",
+      "gabarito_oficial": "Beneficiário recebe acréscimo de 20% na pensão por morte referente a atividades profissionais insalubres da instituidora da pensão, conforme entendimento da 2ª Turma do TRF1.",
+      "acordao": "TRF1 - Revisão pensão por atividade insalubre",
+      "criterio_fidelidade": "A resposta deve reconhecer o direito ao acréscimo decorrente de atividade insalubre comprovada."
+    },
+    {
+      "id": "Q15",
+      "pergunta": "Entrei com pedido de pensão por morte no INSS. O meu esposo faleceu há 4 anos e 11 meses. Ele trabalhava em um emprego normal de assistente administrativo quando era vivo. O regime de trabalho era regido pela CLT. Eu considerava aquele emprego muito pesado, ele trabalhava demais, preocupava com a empresa e era um excelente profissional. Ele era contribuinte, onde comprovei a qualidade de segurado do INSS. Quero revisar o valor da aposentadoria à ordem de 20%, retroagindo para a data de concessão do benefício. Quero receber de forma indenizada o valor divergente, corrigido e atualizado monetariamente. INSS negou a mim a revisão do benefício. A autarquia considerou a inexistência de emprego insalubre. O juiz de primeiro grau considerou procedente as alegações do INSS, não acolhendo meus pedidos na petição inicial. Informe meus direitos sobre o tema. Traga 3 decisões julgados pelo tribunal para que eu possa incorporar na minha petição para o TRF. Ainda informe o sentimento relacionado a estas decisões, sendo negativo para probabilidade de derrota e positivo em probabilidade de sucesso em uma eventual ação judicial.",
+      "gabarito_oficial": "A ausência de comprovação legal de exposição a agentes insalubres impede a concessão do acréscimo de 20% pretendido na revisão da pensão.",
+      "acordao": "Jurisprudência TRF - Insalubridade não comprovada",
+      "criterio_fidelidade": "A resposta deve indicar que sem comprovação técnica de insalubridade o pedido de revisão é improcedente."
+    },
+    {
+      "id": "Q16",
+      "pergunta": "Sou advogado público. Atuando em favor do INSS. Estou revendo um benefício de pensão por morte que foi considerado ilegítimo pelo Tribunal de Contas, em decisão publicada há 6 anos. O Juiz de primeira instância considerou que houve a prescrição, pois já passou mais de 5 anos. Porém em atenção à segurança jurídica e à confiança legítima, os Tribunais de Contas estão sujeitos ao prazo de 5 anos para o julgamento da legalidade do ato de concessão inicial de aposentadoria, reforma ou pensão, a contar da chegada do processo à respectiva Corte de Contas. Considerando o art. 37, § 5º, da Constituição Federal, é imprescritível a pretensão de ressarcimento ao erário fundada em decisão de Tribunal de Contas. Informe meus direitos sobre o tema. Traga 3 decisões julgados pelo tribunal para que eu possa incorporar na minha petição para o TRF. Ainda informe o sentimento relacionado a estas decisões, sendo negativo para probabilidade de derrota e positivo em probabilidade de sucesso em uma eventual ação judicial.",
+      "gabarito_oficial": "Tema 899 de repercussão geral do STF (RE 636886): “É prescritível a pretensão de ressarcimento ao erário fundada em decisão de Tribunal de Contas.”",
+      "acordao": "STF - Tema 899 (RE 636886)",
+      "criterio_fidelidade": "A resposta deve citar o Tema 899 do STF afirmando a prescritibilidade da pretensão de ressarcimento ao erário."
+    },
+    {
+      "id": "Q17",
+      "pergunta": "Meu nome é Maria Fernanda. Sou viúva de Antônio Pedro. Ele era contribuinte, onde comprovei a qualidade de segurado do INSS. Fiquei sabendo pela minha vizinha Marinete sobre uma revisão de direito previdenciário, para melhorar a renda inicial da pensão por morte. Meu marido morreu em 2017, mas ele tinha aposentadoria , por tempo de contribuição desde o ano 2000. Eu acho que tenho direito e tenho legitimidade para pleitear, por direito próprio, a revisão do benefício derivado – pensão por morte, pois sou pensionista já. O INSS não recebeu meu pedido de revisão do benefício, pois disse que já havia passado o prazo. O Juiz de primeira instância também não recebeu meu pedido, ele concordou com o INSS. Informe meus direitos sobre o tema. Traga 3 decisões julgados pelo tribunal para que eu possa incorporar na minha petição para o TRF. Ainda informe o sentimento relacionado a estas decisões, sendo negativo para probabilidade de derrota e positivo em probabilidade de sucesso em uma eventual ação judicial.",
+      "gabarito_oficial": "O direito de revisão de benefício rege-se pelo prazo decadencial decenal (Art. 103 da Lei 8.213/91), sendo reconhecida a decadência e a ilegitimidade/limitação temporal aplicável.",
+      "acordao": "STJ / STF - Decadência do direito de revisão",
+      "criterio_fidelidade": "A resposta deve abordar a decadência do direito de revisão do ato de concessão do benefício originário."
+    },
+    {
+      "id": "Q18",
+      "pergunta": "Meu nome é Maria Betânia. Sou viúva de Antônio Pedro. Tenho uma pensão por morte há 4 anos. Meu benefício foi bloqueado pelo INSS. Me dirigi até uma agência do INSS e fui informada que o bloqueio se deve ao fato de terem averiguado que meu benefício foi concedido mediante simulação ou fraude no casamento. A decisão foi tomada em âmbito administrativo. Solicitei o cancelamento desta medida no INSS em um processo administrativo, onde não obtive sucesso. Meu pedido foi negado. O juiz de primeira instância, em ação judicial que adentrei, também deu razão ao INSS, onde disse que o casamento foi realizado mediante fraude. Mesmo meu casamento tendo sido arranjado, formalizei o casamento só para fraudar o INSS mesmo, mas que não houve processo judicial para apurar essa ilegalidade no casamento, nem foi assegurado o direito ao contraditório, razão pela qual considero a decisão do INSS e juiz de primeiro grau nula e inválida. Informe meus direitos sobre o tema. Traga 3 decisões julgados pelo tribunal para que eu possa incorporar na minha petição para o TRF. Ainda informe o sentimento relacionado a estas decisões, sendo negativo para probabilidade de derrota e positivo em probabilidade de sucesso em uma eventual ação judicial.",
+      "gabarito_oficial": "Art. 74, § 2º da Lei 8.213/91: A perda do direito à pensão por simulação ou fraude exige apuração em processo judicial no qual seja assegurado o contraditório e a ampla defesa.",
+      "acordao": "Lei 8.213/91 - Art. 74, § 2º",
+      "criterio_fidelidade": "A resposta deve citar a exigência de processo judicial prévio com contraditório e ampla defesa para o cancelamento por fraude."
+    },
+    {
+      "id": "Q19",
+      "pergunta": "Sabe me dizer se havendo mais de um pensionista poderei receber mais que os outros? Quero receber mais que a companheira (amante) do meu esposo. Eu que lutei por ele, trabalhei a vida inteira para ele. Ele só alcançou os objetivos por minha conta. Quero que meu benefício seja pelo menos 70% . Informe meus direitos sobre o tema. Traga 3 decisões julgados pelo tribunal para que eu possa incorporar na minha petição para o TRF. Ainda informe o sentimento relacionado a estas decisões, sendo negativo para probabilidade de derrota e positivo em probabilidade de sucesso em uma eventual ação judicial.",
+      "gabarito_oficial": "Havendo mais de um pensionista, a pensão por morte será rateada entre todos em partes iguais, e não proporcionais, nos termos do art. 77 da Lei 8.213/91.",
+      "acordao": "Lei 8.213/91 - Art. 77",
+      "criterio_fidelidade": "A resposta deve indicar o rateio em partes iguais entre os dependentes habilitados, rechaçando a divisão proporcional por contribuição."
+    },
+    {
+      "id": "Q20",
+      "pergunta": "Eu tenho 16 anos, meu pai morreu por uma tragédia ocorrida em uma viagem. O corpo não foi encontrado. Entrei com pedido administrativo de pensão por morte. Ele era contribuinte, onde comprovei a qualidade de segurado do INSS. O INSS negou o pedido administrativo dizendo que não havia se passado 60 (sessenta) dias após a decisão judicial, no caso de morte presumida. Informe meus direitos sobre o tema. Traga 3 decisões julgados pelo tribunal para que eu possa incorporar na minha petição para o TRF. Ainda informe o sentimento relacionado a estas decisões, sendo negativo para probabilidade de derrota e positivo em probabilidade de sucesso em uma eventual ação judicial.",
+      "gabarito_oficial": "Em caso de desaparecimento por acidente, desastre ou catástrofe, a pensão provisória é devida independentemente de prazo de ausência ou declaração judicial prévia (Art. 78, § 1º da Lei 8.213/91).",
+      "acordao": "Lei 8.213/91 - Art. 78, § 1º",
+      "criterio_fidelidade": "A resposta deve afastar a exigência de prazo ou sentença para morte presumida decorrente de catástrofe/acidente."
+    },
+    {
+      "id": "Q21",
+      "pergunta": "Meu filho faleceu há 30 dias. Ele era contribuinte do INSS há 10 anos. Entrei com o pedido do benefício de pensão por morte haja vista ser pai do falecido, portanto, dependente para fins de concessão do benefício. O INSS negou o pedido administrativo dizendo que não houve comprovação de dependência. Fiquei indignado, pois como não há dependência, se sou pai do falecido? Informe meus direitos sobre o tema. Traga 3 decisões julgados pelo tribunal para que eu possa incorporar na minha petição para o TRF. Ainda informe o sentimento relacionado a estas decisões, sendo negativo para probabilidade de derrota e positivo em probabilidade de sucesso em uma eventual ação judicial.",
+      "gabarito_oficial": "Art. 16, § 4º da Lei 8.213/91: A dependência econômica das pessoas indicadas no inciso I (cônjuge, filhos) é presumida, enquanto a das demais classes (pais, inciso II) deve ser comprovada.",
+      "acordao": "Lei 8.213/91 - Art. 16, § 4º",
+      "criterio_fidelidade": "A resposta deve esclarecer que para os pais (segunda classe) a dependência econômica não é presumida, exigindo comprovação."
+    },
+    {
+      "id": "Q22",
+      "pergunta": "Tenho um vizinho com um filho com doença mental. Ele matou o próprio pai. Foi homicídio doloso contra o próprio pai. Ele era contribuinte, onde comprovei a qualidade de segurado do INSS. O INSS negou o pedido administrativo dizendo que ele assassinatou o genitor, portanto, não teria direito pelo princípio da indignidade, conforme Art. 74 da lei 8.213/91. Informe meus direitos sobre o tema. Traga 3 decisões julgados pelo tribunal para que eu possa incorporar na minha petição para o TRF. Ainda informe o sentimento relacionado a estas decisões, sendo negativo para probabilidade de derrota e positivo em probabilidade de sucesso em uma eventual ação judicial.",
+      "gabarito_oficial": "Art. 74, § 1º da Lei 8.213/91: Ressalvam-se da perda do direito à pensão por morte os absolutamente incapazes e os inimputáveis, mesmo em caso de homicídio doloso contra o segurado.",
+      "acordao": "Lei 8.213/91 - Art. 74, § 1º",
+      "criterio_fidelidade": "A resposta deve ressalvar a exceção para absolutamente incapazes e inimputáveis no tocante à indignidade."
+    },
+    {
+      "id": "Q23",
+      "pergunta": "Sou advogado público. AGU. O INSS concedeu benefício previdenciário pensão por morte a um filho que assassinou o próprio pai. O pai assassinado era contribuinte, com documentos comprobatórios juntados ao processo administrativo na autarquia INSS. O INSS acolheu o pedido de pensão por morte do filho assassino, dizendo que foi comprovada a doença mental e a inimputabilidade do filho. Porém, não foi juntada sentença penal reconhecendo a incapacidade absoluta e inimputabilidade do réu. Fato este que nos leva a entrar com ação junto ao TRF para cancelamento do benefício por indignidade do dependente. Informe meus direitos sobre o tema. Traga 3 decisões julgados pelo tribunal para que eu possa incorporar na minha petição para o TRF. Ainda informe o sentimento relacionado a estas decisões, sendo negativo para probabilidade de derrota e positivo em probabilidade de sucesso em uma eventual ação judicial.",
+      "gabarito_oficial": "A aplicação da exceção de indignidade para inimputáveis exige comprovação legal cabal (sentença penal/reconhecimento da inimputabilidade), havendo previsão de suspensão cautelar se houver indícios (art. 77, § 7º da Lei 8.213/91).",
+      "acordao": "Lei 8.213/91 - Art. 74 e Art. 77",
+      "criterio_fidelidade": "A resposta deve analisar a necessidade de comprovação da inimputabilidade ou cabimento de suspensão por indícios."
+    },
+    {
+      "id": "Q24",
+      "pergunta": "Sou advogado público. AGU. O INSS concedeu benefício previdenciário pensão por morte a um filho cujo pai teve óbito por doença profissional ou acidente do trabalho. O pai era contribuinte, com documentos comprobatórios juntados ao processo administrativo na autarquia INSS. O INSS acolheu o pedido de pensão por morte do filho, dizendo que foi comprovada a doença profissional do falecido. Porém, pela previsão do Art. V, alínea “a”, da Lei 8.231/91, precisa respeitar a aplicação da carência de 18 meses de contribuição ou 2 anos de em caso de união estável. O que não foi comprovado pelo dependente. Razão pela qual quero entrar no TRF para anular a concessão do benefício. Informe meus direitos sobre o tema. Traga 3 decisões julgados pelo tribunal para que eu possa incorporar na minha petição para o TRF. Ainda informe o sentimento relacionado a estas decisões, sendo negativo para probabilidade de derrota e positivo em probabilidade de sucesso em uma eventual ação judicial.",
+      "gabarito_oficial": "Art. 77, § 2º-A da Lei 8.213/91: Se o óbito decorrer de acidente de qualquer natureza ou de doença profissional/trabalho, dispensam-se os 18 meses de contribuição ou 2 anos de casamento/união estável.",
+      "acordao": "Lei 8.213/91 - Art. 77, § 2º-A",
+      "criterio_fidelidade": "A resposta deve demonstrar que o óbito por acidente de trabalho ou doença profissional dispensa a exigência de carência mínima de contribuições."
+    },
+    {
+      "id": "Q25",
+      "pergunta": "Sou advogado público. AGU. O INSS concedeu benefício previdenciário pensão por morte a um filho que alegou ser dependente com deficiência intelectual ou mental ou deficiência grave. O pai era contribuinte, com documentos comprobatórios juntados ao processo administrativo na autarquia INSS. O INSS acolheu o pedido de pensão por morte para o filho dependente, dizendo que foi comprovada a doença mental, ou doença grave, portanto é devida a pensão por morte. Porém, a AGU averiguou que o dependente possui remuneração alta, ele percebe rendimentos altos pela atividade de microempreendedor. Recebe mais que qualquer cidadão de classe média alta do país. Neste sentido ele não poderá alegar incapacidade, pois exerce atividade remunerada e tem plena pela capacidade para exercer atividade de microempresário. Neste sentido queremos entrar com ação no TRF para cancelar o benefício concedido pelo INSS ao dependente. Informe meus direitos sobre o tema. Traga 3 decisões julgados pelo tribunal para que eu possa incorporar na minha petição para o TRF. Ainda informe o sentimento relacionado a estas decisões, sendo negativo para probabilidade de derrota e positivo em probabilidade de sucesso em uma eventual ação judicial.",
+      "gabarito_oficial": "Art. 77, § 6º da Lei 8.213/91: O exercício de atividade remunerada, inclusive MEI, não impede a concessão ou manutenção da cota de pensão do dependente com deficiência.",
+      "acordao": "Lei 8.213/91 - Art. 77, § 6º",
+      "criterio_fidelidade": "A resposta deve reconhecer expressamente que o exercício de atividade remunerada ou MEI não impede a pensão para dependente com deficiência."
+    },
+    {
+      "id": "Q26",
+      "pergunta": "Sou advogado público. AGU. O INSS concedeu benefício previdenciário pensão por morte a um companheiro que alegou ser dependente. A esposa era contribuinte, com documentos comprobatórios juntados ao processo administrativo na autarquia INSS. Segundo o INSS, os documentos atestaram a comprovação da união estável. Porém a AGU averiguou que o benefício foi concedido mesmo diante de simulação ou fraude no casamento. A decisão foi tomada em âmbito administrativo. Quero entrar com ação judicial no TRF para cancelar o benefício, visto que a lei dispõe que não há prescrição quando for concedido o benefício mediante fraude ou simulação. Informe meus direitos sobre o tema. Traga 3 decisões julgados pelo tribunal para que eu possa incorporar na minha petição para o TRF. Ainda informe o sentimento relacionado a estas decisões, sendo negativo para probabilidade de derrota e positivo em probabilidade de sucesso em uma eventual ação judicial.",
+      "gabarito_oficial": "Art. 74, § 2º da Lei 8.213/91: Perde o direito à pensão o cônjuge/companheiro se comprovada, a qualquer tempo, simulação ou fraude, apuradas em processo judicial com contraditório.",
+      "acordao": "Lei 8.213/91 - Art. 74, § 2º",
+      "criterio_fidelidade": "A resposta deve confirmar a imprescritibilidade/possibilidade de cancelamento a qualquer tempo em caso de fraude comprovada judicialmente."
+    },
+    {
+      "id": "Q27",
+      "pergunta": "Sou advogado público. AGU. O INSS concedeu benefício previdenciário pensão por morte a um companheiro que participou de tentativa de homicídio contra o segurado. O falecido era contribuinte, com documentos comprobatórios juntados ao processo administrativo na autarquia INSS. Segundo o INSS, os documentos atestaram a comprovação da união estável. Porém a AGU averiguou que o benefício foi concedido mesmo diante de uma sentença criminal transitada em julgado por tentativa de homicídio do dependente contra o beneficiário. Ocorre que a tentativa de homicídio não foi o fator do óbito. O óbito foi natural. Porém a disposição legal não exige a consumação do homicídio para a perda do benefício. Quero entrar com ação judicial no TRF para cancelar o benefício, visto que o benefício foi concedido há menos de 5 anos. Ainda assim, existe sentença transitada em julgado por tentativa de homicídio contra o beneficiário. Informe meus direitos sobre o tema. Traga 3 decisões julgados pelo tribunal para que eu possa incorporar na minha petição para o TRF. Ainda informe o sentimento relacionado a estas decisões, sendo negativo para probabilidade de derrota e positivo em probabilidade de sucesso em uma eventual ação judicial.",
+      "gabarito_oficial": "Art. 74, § 1º da Lei 8.213/91: A lei prevê a perda do benefício em caso de homicídio doloso ou tentativa desse crime contra o segurado, independentemente de a causa mortis ter sido diversa.",
+      "acordao": "Lei 8.213/91 - Art. 74, § 1º",
+      "criterio_fidelidade": "A resposta deve confirmar que a tentativa de homicídio gera indignidade e perda da pensão mesmo em caso de óbito natural posterior."
+    },
+    {
+      "id": "Q28",
+      "pergunta": "Sou advogado público. AGU. O INSS concedeu benefício previdenciário pensão por morte a um companheiro que participou de tentativa de homicídio contra o segurado. O falecido era contribuinte, com documentos comprobatórios juntados ao processo administrativo na autarquia INSS. Segundo o INSS, os documentos atestaram a comprovação da união estável. Porém a AGU averiguou que o benefício foi concedido mesmo diante de uma sentença criminal transitada em julgado por tentativa de homicídio do dependente contra o beneficiário. Porém a tentativa de homicídio teve trânsito em julgado há mais de 10 anos. Quero entrar com ação judicial no TRF para cancelar o benefício, visto que a lei dispõe que não há prescrição quando for concedido o benefício diante de sentença transitada em julgado por tentativa de homicídio contra o beneficiário. Informe meus direitos sobre o tema. Traga 3 decisões julgados pelo tribunal para que eu possa incorporar na minha petição para o TRF. Ainda informe o sentimento relacionado a estas decisões, sendo negativo para probabilidade de derrota e positivo em probabilidade de sucesso em uma eventual ação judicial.",
+      "gabarito_oficial": "Art. 103-A da Lei 8.213/91: O direito da Previdência Social de anular atos administrativos decai em dez anos, salvo comprovada má-fé.",
+      "acordao": "Lei 8.213/91 - Art. 103-A",
+      "criterio_fidelidade": "A resposta deve ponderar o prazo decadencial de 10 anos para anulação de atos administrativos, ressalvada a hipótese de má-fé."
+    },
+    {
+      "id": "Q29",
+      "pergunta": "Sou advogado público. AGU. O INSS concedeu benefício previdenciário pensão por morte a um companheiro do segurado. O falecido era contribuinte, com documentos comprobatórios juntados ao processo administrativo na autarquia INSS. Segundo o INSS, os documentos atestaram a comprovação da união estável. Porém a AGU averiguou que o benefício foi concedido pelo prazo de 20 anos mesmo o companheiro tendo 29 anos de idade. A AGU entende que o benefício aplicável seria de 10 anos, visto que o dependente tem apenas 29 anos de idade. Quero entrar com ação judicial no TRF para revisar o benefício, visto que o benefício foi concedido há menos de 5 anos, e foi concedido pelo período muito superior à previsão legal. Quero também receber todos os valores recebidos indevidamente pelo dependente, com valores corrigidos. Informe meus direitos sobre o tema. Traga 3 decisões julgados pelo tribunal para que eu possa incorporar na minha petição para o TRF. Ainda informe o sentimento relacionado a estas decisões, sendo negativo para probabilidade de derrota e positivo em probabilidade de sucesso em uma eventual ação judicial.",
+      "gabarito_oficial": "Art. 74 / Art. 77 da Lei 8.213/91: Fixação do prazo de duração da pensão conforme a idade do cônjuge/companheiro (para 29 anos de idade, o prazo é de 10 anos).",
+      "acordao": "Lei 8.213/91 - Tabela de duração da pensão por idade",
+      "criterio_fidelidade": "A resposta deve aplicar corretamente a tabela de duração da pensão por morte de acordo com a faixa etária do beneficiário."
+    },
+    {
+      "id": "Q30",
+      "pergunta": "Meu nome é João. O INSS concedeu benefício previdenciário pensão por morte para mim, visto que minha esposa era segurada. A minha esposa era contribuinte, com documentos comprobatórios juntados ao processo administrativo na autarquia INSS. O INSS concedeu o benefício, porém somente por 15 anos. Quero entrar com ação judicial no TRF para revisar o benefício, visto que o benefício foi concedido há menos de 5 anos, e foi concedido somente pelo período de 15 anos, mesmo eu tendo 41 anos de idade à época do falecimento da minha esposa. Quero revisar para obter o benefício vitalício. Informe meus direitos sobre o tema. Traga 3 decisões julgados pelo tribunal para que eu possa incorporar na minha petição para o TRF. Ainda informe o sentimento relacionado a estas decisões, sendo negativo para probabilidade de derrota e positivo em probabilidade de sucesso em uma eventual ação judicial.",
+      "gabarito_oficial": "Art. 74 / Art. 77 da Lei 8.213/91: Para 41 anos de idade, a duração da pensão é de 20 anos (sendo vitalícia apenas a partir de 44 anos).",
+      "acordao": "Lei 8.213/91 - Tabela de duração da pensão por idade",
+      "criterio_fidelidade": "A resposta deve verificar a faixa etária de 41 anos, apontando que o prazo correto é de 20 anos, e não vitalício."
     }
   ]
 }

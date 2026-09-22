@@ -11,6 +11,7 @@ Organizada em abas:
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 import pandas as pd
@@ -219,11 +220,21 @@ def _aba_configuracao():
     up_docs = st.file_uploader(
         "Ou envie documentos (PDFs/TXTs/CSVs)", type=["pdf", "txt", "csv"], accept_multiple_files=True
     )
+    arquivos_enviados = []
     if up_docs:
         Path(base_dir).mkdir(parents=True, exist_ok=True)
         for doc in up_docs:
             (Path(base_dir) / doc.name).write_bytes(doc.getvalue())
+            arquivos_enviados.append(doc.name)
         st.success(f"{len(up_docs)} arquivo(s) salvos em {base_dir}")
+        # Atalho: indexar imediatamente só os arquivos recém-enviados.
+        if st.button("⚡ Indexar arquivos enviados agora", type="primary"):
+            for nome in arquivos_enviados:
+                _disparar_reindexacao(nome)
+            st.success(
+                f"Indexação de {len(arquivos_enviados)} arquivo(s) iniciada em "
+                "segundo plano. Acompanhe o progresso na seção de reindexação abaixo."
+            )
 
     # Delimitador dos CSVs da base jurídica.
     csv_cfg = cfg.parametros.setdefault("csv_base_juridica", {})
@@ -249,8 +260,18 @@ def _aba_configuracao():
     )
     csv_cfg["delimitador"] = opcoes_delim[delim_label]
 
-    reindexar = st.checkbox("Reindexar base do zero", value=False)
+    reindexar = st.checkbox(
+        "Reindexar base do zero ao executar",
+        value=False,
+        help="Quando marcado, a próxima execução reprocessa TODA a base antes "
+             "de rodar as perguntas. Para indexar agora (sem executar), use os "
+             "controles abaixo.",
+    )
     st.session_state["reindexar"] = reindexar
+
+    # Controles de indexação imediata (arquivo específico ou base completa).
+    with st.expander("🔁 Indexar agora (sem executar)", expanded=False):
+        _secao_reindexacao(cfg, contexto="config")
 
     st.divider()
     st.subheader("🧠 Modelos (Groq API)")
@@ -512,7 +533,7 @@ def _iniciar_benchmarking(
         utils.salvar_json(relatorio, cfg.dados["diretorio_saida"])
         utils.salvar_csv(relatorio, cfg.dados["diretorio_saida"])
         progress.progress(1.0, text="Concluído!")
-        st.success("✅ Benchmarking concluído. Veja o Dashboard de Resultados.")
+        st.success("✅ Execução concluída. Veja o Dashboard de Resultados.")
     except Exception as exc:  # noqa: BLE001
         st.error(f"Erro durante a execução: {exc}")
     finally:
@@ -956,6 +977,308 @@ def _aba_dashboard():
 
 
 # ---------------------------------------------------------------------------
+# Aba: Informações do RAG
+# ---------------------------------------------------------------------------
+
+def _abrir_collection_chroma(cfg: Config):
+    """
+    Abre a collection do ChromaDB em modo leitura, com telemetria desativada.
+    Retorna (collection, erro). Em caso de falha, collection é None e erro traz
+    a mensagem. Não levanta exceção para não quebrar a renderização da aba.
+    """
+    import os
+
+    os.environ.setdefault("ANONYMIZED_TELEMETRY", "False")
+    os.environ.setdefault("CHROMA_TELEMETRY_IMPL", "none")
+
+    params = cfg.parametros
+    persist_dir = params.get("persist_directory", "data/chroma_db")
+    collection_name = params.get("collection_name", "pensao_por_morte")
+
+    if not Path(persist_dir).exists():
+        return None, f"Diretório do ChromaDB não encontrado: {persist_dir}"
+
+    try:
+        import chromadb
+        from chromadb.config import Settings
+
+        client = chromadb.PersistentClient(
+            path=persist_dir,
+            settings=Settings(anonymized_telemetry=False),
+        )
+        col = client.get_collection(collection_name)
+        return col, None
+    except Exception as exc:  # noqa: BLE001
+        return None, f"{type(exc).__name__}: {exc}"
+
+
+def _listar_arquivos_base(cfg: Config) -> list[str]:
+    """Lista os arquivos indexáveis (PDF/TXT/CSV) da base jurídica."""
+    base = Path(cfg.dados.get("base_juridica", "data/base_juridica/"))
+    if not base.exists():
+        return []
+    arquivos = (
+        list(base.glob("**/*.pdf"))
+        + list(base.glob("**/*.txt"))
+        + list(base.glob("**/*.csv"))
+    )
+    return sorted(a.name for a in arquivos)
+
+
+def _disparar_reindexacao(arquivo: str | None) -> None:
+    """
+    Dispara o reindexar.py como processo SEPARADO (não trava a UI).
+
+    Se `arquivo` for None, reindexa toda a base; senão, só o arquivo indicado.
+    O progresso vai para _reindex_log.txt, exibido na própria aba.
+    """
+    import subprocess
+    import os as _os
+
+    # Usa o mesmo interpretador Python que roda a UI.
+    py = sys.executable
+    cmd = [py, "reindexar.py"]
+    if arquivo:
+        cmd += ["--arquivo", arquivo]
+
+    env = dict(_os.environ)
+    env["ANONYMIZED_TELEMETRY"] = "False"
+    env["CHROMA_TELEMETRY_IMPL"] = "none"
+
+    # Popen não bloqueia: a indexação roda em background, a UI segue livre.
+    subprocess.Popen(cmd, env=env, cwd=_os.getcwd())
+
+
+def _secao_reindexacao(cfg: Config, contexto: str = "rag"):
+    """
+    Renderiza os controles de reindexação. `contexto` compõe keys únicas para
+    os widgets, permitindo reutilizar esta seção em mais de uma aba sem colidir
+    IDs (StreamlitDuplicateElementId).
+    """
+    st.subheader("🔁 Reindexação")
+    st.caption(
+        "Atualize a base vetorial. A indexação roda em segundo plano; "
+        "acompanhe o progresso abaixo."
+    )
+
+    arquivos = _listar_arquivos_base(cfg)
+
+    col_a, col_b = st.columns([0.6, 0.4])
+    with col_a:
+        alvo = st.selectbox(
+            "Escopo da reindexação",
+            options=["(Toda a base)"] + arquivos,
+            help="Escolha um arquivo para indexar/atualizar só ele, ou "
+                 "'(Toda a base)' para reprocessar tudo do zero.",
+            key=f"reindex_alvo_{contexto}",
+        )
+    with col_b:
+        st.write("")
+        st.write("")
+        if alvo == "(Toda a base)":
+            if st.button("♻️ Reindexar tudo", use_container_width=True,
+                         key=f"reindex_tudo_{contexto}"):
+                _disparar_reindexacao(None)
+                st.session_state["_reindex_disparada"] = True
+                st.warning(
+                    "Reindexação TOTAL iniciada em segundo plano "
+                    "(pode levar bastante tempo)."
+                )
+        else:
+            if st.button("📄 Indexar este arquivo", type="primary",
+                         use_container_width=True,
+                         key=f"reindex_arquivo_{contexto}"):
+                _disparar_reindexacao(alvo)
+                st.session_state["_reindex_disparada"] = True
+                st.success(f"Indexação de '{alvo}' iniciada em segundo plano.")
+
+    # Progresso (lido do arquivo de log gerado pelo reindexar.py)
+    log_path = Path("_reindex_log.txt")
+    col_r1, col_r2 = st.columns([0.3, 0.7])
+    with col_r1:
+        atualizar = st.button("🔄 Atualizar progresso",
+                              key=f"reindex_atualizar_{contexto}")
+    with col_r2:
+        if log_path.exists():
+            import datetime as _dt
+            mtime = _dt.datetime.fromtimestamp(log_path.stat().st_mtime)
+            st.caption(f"Log atualizado às {mtime.strftime('%H:%M:%S')}")
+
+    if log_path.exists():
+        try:
+            linhas = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+            # Mostra as últimas linhas (progresso mais recente no fim).
+            ultimas = linhas[-25:] if len(linhas) > 25 else linhas
+            concluido = any("[FIM]" in ln for ln in linhas)
+            erro = any("[ERRO]" in ln for ln in linhas)
+            if concluido:
+                st.success("✅ Indexação concluída. Atualize a página para ver os novos números.")
+            elif erro:
+                st.error("❌ A indexação terminou com erro. Veja o log abaixo.")
+            _render_logs(st.empty(), ultimas, altura=260)
+        except Exception as exc:  # noqa: BLE001
+            st.caption(f"(Não foi possível ler o log: {exc})")
+    else:
+        st.caption("Nenhuma reindexação registrada ainda.")
+
+
+def _aba_rag():
+    st.header("🔎 Informações do RAG")
+    st.caption(
+        "Parâmetros do pipeline de Retrieval-Augmented Generation e o estado "
+        "atual da base vetorial (ChromaDB)."
+    )
+
+    cfg: Config = st.session_state["config"]
+    p = cfg.parametros
+
+    # Helper: renderiza um par rótulo/valor em fonte compacta.
+    def _item(rotulo: str, valor) -> str:
+        return (
+            f"<div style='margin-bottom:8px;'>"
+            f"<span style='font-size:0.78em; color:#6b7280;'>{rotulo}</span><br>"
+            f"<span style='font-size:1.0em; font-weight:600; color:#0b2545;'>{valor}</span>"
+            f"</div>"
+        )
+
+    # --- Parâmetros configurados ------------------------------------------
+    st.subheader("⚙️ Parâmetros configurados")
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.markdown("**✂️ Chunking**")
+        st.markdown(
+            _item("Chunk size (chars)", p.get("chunk_size", "—"))
+            + _item("Overlap (chars)", p.get("chunk_overlap", "—"))
+            + _item("Batch de indexação", p.get("index_batch_size", "—")),
+            unsafe_allow_html=True,
+        )
+    with col2:
+        st.markdown("**🧬 Embeddings**")
+        st.markdown(
+            _item("Modelo", p.get("embedding_model", "—")),
+            unsafe_allow_html=True,
+        )
+        st.caption(
+            "Modelo de embeddings executado localmente (CPU) para vetorizar "
+            "cada chunk e as consultas."
+        )
+    with col3:
+        st.markdown("**🎯 Recuperação (retrieval)**")
+        busca = str(p.get("search_type", "—")).upper()
+        html = _item("Top-k", p.get("top_k", "—")) + _item("Tipo de busca", busca)
+        if str(p.get("search_type")) == "mmr":
+            html += _item("MMR lambda", p.get("mmr_lambda", "—"))
+        st.markdown(html, unsafe_allow_html=True)
+
+    st.divider()
+
+    # --- Estado da base vetorial (ChromaDB) --------------------------------
+    st.subheader("🗄️ Base vetorial (ChromaDB)")
+
+    ce1, ce2 = st.columns(2)
+    ce1.markdown(f"**Collection:** `{p.get('collection_name', '—')}`")
+    ce2.markdown(f"**Diretório:** `{p.get('persist_directory', '—')}`")
+
+    col, erro = _abrir_collection_chroma(cfg)
+    if erro:
+        st.warning(
+            f"Não foi possível ler a base vetorial. {erro}\n\n"
+            "Se você ainda não indexou, rode a indexação primeiro."
+        )
+        return
+
+    try:
+        total = col.count()
+    except Exception as exc:  # noqa: BLE001
+        st.error(f"Erro ao contar chunks: {exc}")
+        return
+
+    st.metric("📦 Total de chunks indexados", f"{total:,}".replace(",", "."))
+
+    if total == 0:
+        st.info("A base está vazia. Rode a indexação para populá-la.")
+        return
+
+    # --- Distribuição por fonte (arquivo de origem) ------------------------
+    st.markdown("**📚 Fontes indexadas (chunks por arquivo)**")
+    try:
+        # Amostra os metadados para agregar por fonte. Para bases grandes,
+        # limita a amostra para não pesar na UI.
+        # Busca TODOS os metadados (sem amostrar) para não omitir arquivos.
+        # Só metadados é leve — o Chroma agrega dezenas de milhares sem problema.
+        dados = col.get(include=["metadatas"])
+        metas = dados.get("metadatas", []) or []
+        contagem: dict[str, int] = {}
+        for meta in metas:
+            origem = (meta or {}).get("source") or (meta or {}).get("fonte") or "(desconhecida)"
+            origem = Path(str(origem)).name  # só o nome do arquivo
+            contagem[origem] = contagem.get(origem, 0) + 1
+
+        if contagem:
+            df_fontes = pd.DataFrame(
+                sorted(contagem.items(), key=lambda kv: kv[1], reverse=True),
+                columns=["Arquivo", "Chunks"],
+            )
+            st.caption(
+                f"{len(df_fontes)} arquivo(s) — {len(metas):,} chunks no total.".replace(",", ".")
+            )
+            st.dataframe(df_fontes, use_container_width=True, hide_index=True)
+
+            fig = px.bar(
+                df_fontes.head(20),
+                x="Chunks",
+                y="Arquivo",
+                orientation="h",
+                text="Chunks",
+                color_discrete_sequence=["#2f5fa8"],
+            )
+            fig.update_layout(yaxis={"categoryorder": "total ascending"}, height=500)
+            fig.update_yaxes(title_text="")
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("Os chunks não possuem metadado de fonte para agregar.")
+    except Exception as exc:  # noqa: BLE001
+        st.warning(f"Não foi possível agregar por fonte: {exc}")
+
+    st.divider()
+
+    # --- Explorador de busca semântica -------------------------------------
+    st.subheader("🔍 Testar recuperação (busca semântica)")
+    st.caption(
+        "Digite uma consulta e veja quais trechos o RAG recuperaria. Usa o "
+        "mesmo modelo de embeddings e a mesma collection da execução."
+    )
+
+    consulta = st.text_input(
+        "Consulta de teste",
+        placeholder="Ex.: requisitos para concessão de pensão por morte",
+    )
+    n_result = st.slider("Nº de trechos a recuperar", 1, 15, p.get("top_k", 8))
+
+    if st.button("🔎 Buscar", type="primary") and consulta.strip():
+        with st.spinner("Recuperando trechos..."):
+            try:
+                res = col.query(query_texts=[consulta], n_results=n_result)
+                docs = (res.get("documents") or [[]])[0]
+                metas = (res.get("metadatas") or [[]])[0]
+                dists = (res.get("distances") or [[]])[0]
+
+                if not docs:
+                    st.info("Nenhum trecho recuperado.")
+                else:
+                    for i, (doc, meta, dist) in enumerate(zip(docs, metas, dists), 1):
+                        origem = Path(str((meta or {}).get("source", "?"))).name
+                        with st.expander(
+                            f"#{i} — {origem}  (distância: {dist:.4f})",
+                            expanded=(i <= 3),
+                        ):
+                            st.write(doc or "")
+            except Exception as exc:  # noqa: BLE001
+                st.error(f"Erro na busca: {exc}")
+
+
+# ---------------------------------------------------------------------------
 # App principal
 # ---------------------------------------------------------------------------
 
@@ -1028,8 +1351,8 @@ def run():
         _encerrar_app()
         st.stop()
 
-    aba1, aba2, aba3, aba4 = st.tabs([
-        "⚙️ Configurações", "🗂️ Dados", "▶️ Execução", "📈 Resultados",
+    aba1, aba2, aba3, aba4, aba5 = st.tabs([
+        "⚙️ Configurações", "🗂️ Dados", "▶️ Execução", "📈 Resultados", "🔎 RAG",
     ])
     with aba1:
         _aba_configuracao()
@@ -1039,3 +1362,5 @@ def run():
         _aba_benchmarking()
     with aba4:
         _aba_dashboard()
+    with aba5:
+        _aba_rag()

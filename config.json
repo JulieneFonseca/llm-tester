@@ -42,6 +42,7 @@
     "embedding_model": "sentence-transformers/all-MiniLM-L6-v2",
     "collection_name": "pensao_por_morte",
     "persist_directory": "data/chroma_db",
+    "index_batch_size": 200,
     "csv_base_juridica": {
       "delimitador": ";",
       "limite_campo_chars": 500,
