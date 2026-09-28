@@ -259,6 +259,35 @@ class Pipeline:
         )
         return self._vector_store
 
+    def _apagar_collection(self, log) -> int:
+        """
+        Apaga a collection inteira do ChromaDB (zera a base), de forma confiável.
+
+        Deletar por IDs é frágil com dezenas de milhares de chunks (col.get()
+        sem paginação não retorna tudo). Apagar a collection e recriá-la é o
+        único jeito seguro. Retorna quantos chunks existiam antes.
+        """
+        persist_dir = self.params.get("persist_directory", "data/chroma_db")
+        collection = self.params.get("collection_name", "pensao_por_morte")
+        antes = 0
+        if Path(persist_dir).exists():
+            try:
+                import chromadb
+                client = chromadb.PersistentClient(
+                    path=persist_dir, settings=self._chroma_settings()
+                )
+                try:
+                    antes = client.get_collection(collection).count()
+                except Exception:
+                    antes = 0
+                client.delete_collection(collection)
+                log(f"[base] Collection '{collection}' apagada ({antes} chunk(s)).")
+            except Exception as exc:  # noqa: BLE001
+                log(f"[aviso] Falha ao apagar collection (pode não existir): {exc}")
+        # (Re)cria a collection vazia.
+        self._abrir_vector_store()
+        return antes
+
     def _carregar_arquivos(self, arquivos_doc, arquivos_csv, log) -> list:
         """Carrega uma lista de arquivos (PDF/TXT/CSV) em Documents."""
         from langchain_community.document_loaders import PyPDFLoader, TextLoader
@@ -438,31 +467,8 @@ class Pipeline:
             f"({len(arquivos_doc)} PDF/TXT + {len(arquivos_csv)} CSV).")
 
         # Reindexação total: começa do zero, APAGANDO a collection inteira.
-        #
-        # IMPORTANTE: deletar por IDs (col.get()+col.delete(ids)) é frágil — o
-        # col.get() sem paginação não retorna todos os IDs quando há dezenas de
-        # milhares de chunks, deixando lixo para trás e ACUMULANDO duplicatas a
-        # cada reindexação. Apagar a collection inteira e recriá-la é o único
-        # jeito confiável de garantir um banco limpo.
-        collection = self.params.get("collection_name", "pensao_por_morte")
-        if Path(persist_dir).exists():
-            log("[base] Reindexação total: apagando collection existente...")
-            try:
-                import chromadb
-                client = chromadb.PersistentClient(
-                    path=persist_dir, settings=self._chroma_settings()
-                )
-                try:
-                    antes = client.get_collection(collection).count()
-                except Exception:
-                    antes = 0
-                client.delete_collection(collection)
-                log(f"[base] Collection '{collection}' apagada ({antes} chunk(s)).")
-            except Exception as exc:  # noqa: BLE001
-                log(f"[aviso] Falha ao apagar collection (pode não existir): {exc}")
-
-        # (Re)cria a collection vazia.
-        self._abrir_vector_store()
+        log("[base] Reindexação total: apagando collection existente...")
+        self._apagar_collection(log)
 
         t_carga_ini = time.perf_counter()
         documentos = self._carregar_arquivos(arquivos_doc, arquivos_csv, log)
@@ -510,6 +516,33 @@ class Pipeline:
 
     # -- Indexação incremental (por arquivo) ---------------------------------
 
+    def _indexar_um_arquivo(self, arq: Path, log, remover_antigo: bool = True) -> int:
+        """
+        Indexa um único arquivo na collection JÁ ABERTA (self._vector_store).
+        Se `remover_antigo`, remove os chunks anteriores desse `source` antes
+        (evita duplicatas em reindexações incrementais). Retorna nº de chunks.
+        Reutilizado por indexar_arquivo e indexar_selecionados.
+        """
+        if remover_antigo:
+            self._remover_source(arq, log)
+
+        suf = arq.suffix.lower()
+        if suf == ".csv":
+            arquivos_doc, arquivos_csv = [], [arq]
+        elif suf in (".pdf", ".txt"):
+            arquivos_doc, arquivos_csv = [arq], []
+        else:
+            raise ValueError(f"Tipo de arquivo não suportado: {suf}")
+
+        documentos = self._carregar_arquivos(arquivos_doc, arquivos_csv, log)
+        if not documentos:
+            log(f"[aviso] Nenhum conteúdo carregado de '{arq.name}'.")
+            return 0
+
+        chunks, _ = self._chunkar_documentos(documentos, log)
+        self._inserir_chunks_lotes(chunks, log)
+        return len(chunks)
+
     def indexar_arquivo(
         self,
         caminho: str,
@@ -517,12 +550,7 @@ class Pipeline:
     ) -> int:
         """
         Indexa (ou reindexa) UM único arquivo, sem afetar o resto da base.
-
-        Fluxo:
-          1. Abre a collection existente (cria se não existir).
-          2. Remove os chunks antigos daquele arquivo (evita duplicatas).
-          3. Carrega, faz chunking e insere só aquele arquivo.
-
+        Remove os chunks antigos daquele arquivo antes (evita duplicatas).
         Retorna o número de chunks inseridos para o arquivo.
         """
         log = log or (lambda m: None)
@@ -534,46 +562,87 @@ class Pipeline:
         t_inicio = time.perf_counter()
         log(f"[arquivo] Indexação incremental de: {arq.name}")
 
-        # 1. Abre a collection (persistente).
         self._abrir_vector_store()
-
-        # 2. Remove versão antiga deste arquivo, se houver.
-        self._remover_source(arq, log)
-
-        # 3. Carrega o arquivo conforme o tipo.
-        suf = arq.suffix.lower()
-        if suf == ".csv":
-            arquivos_doc, arquivos_csv = [], [arq]
-        elif suf in (".pdf", ".txt"):
-            arquivos_doc, arquivos_csv = [arq], []
-        else:
-            raise ValueError(f"Tipo de arquivo não suportado: {suf}")
-
-        t_carga_ini = time.perf_counter()
-        documentos = self._carregar_arquivos(arquivos_doc, arquivos_csv, log)
-        if not documentos:
-            raise ValueError(f"Nenhum conteúdo carregado de '{arq.name}'.")
-        tempo_carga = time.perf_counter() - t_carga_ini
-
-        chunks, _ = self._chunkar_documentos(documentos, log)
-        tempo_index = self._inserir_chunks_lotes(chunks, log)
+        n = self._indexar_um_arquivo(arq, log, remover_antigo=True)
         tempo_total = time.perf_counter() - t_inicio
 
-        log(f"[ok] {len(chunks)} chunks de '{arq.name}' indexados "
-            f"em {self._fmt_tempo(tempo_total)} "
-            f"(carga {tempo_carga:.1f}s + indexação {tempo_index:.1f}s).")
-
         total_atual = self._vector_store._collection.count()
+        log(f"[ok] {n} chunks de '{arq.name}' indexados em {self._fmt_tempo(tempo_total)}.")
         log(f"[base] Total de chunks na base agora: {total_atual}")
 
         self.tempos_indexacao = {
             "reindexado": True,
             "arquivo": arq.name,
-            "total_chunks": len(chunks),
+            "total_chunks": n,
             "total_chunks_base": total_atual,
             "tempo_total_indexacao_s": round(tempo_total, 2),
         }
-        return len(chunks)
+        return n
+
+    # -- Indexação de uma seleção de arquivos --------------------------------
+
+    def indexar_selecionados(
+        self,
+        caminhos: list[str],
+        log: Callable[[str], None] | None = None,
+        zerar: bool = False,
+    ) -> int:
+        """
+        Indexa uma LISTA de arquivos selecionados.
+
+        - zerar=False: incremental. Atualiza cada arquivo da lista (removendo a
+          versão antiga de cada um), mantendo o resto da base intacto.
+        - zerar=True: apaga TODA a base primeiro e reindexa apenas os arquivos
+          da lista.
+
+        Se a lista estiver vazia, NÃO faz nada (nem zera). Retorna o total de
+        chunks inseridos nesta operação.
+        """
+        log = log or (lambda m: None)
+
+        arquivos = [Path(c) for c in caminhos]
+        existentes = [a for a in arquivos if a.exists()]
+        faltando = [a for a in arquivos if not a.exists()]
+        for a in faltando:
+            log(f"[aviso] Arquivo não encontrado, ignorado: {a}")
+
+        if not existentes:
+            log("[base] Nenhum arquivo selecionado válido. Nada a indexar.")
+            self.tempos_indexacao = {"reindexado": False, "total_chunks": 0}
+            return 0
+
+        t_inicio = time.perf_counter()
+        modo = "ZERAR + reindexar selecionados" if zerar else "incremental (selecionados)"
+        log(f"[base] Indexação de {len(existentes)} arquivo(s) — modo: {modo}.")
+
+        if zerar:
+            log("[base] Apagando a base antes de reindexar os selecionados...")
+            self._apagar_collection(log)
+            remover_antigo = False  # base já vazia, não precisa remover por source
+        else:
+            self._abrir_vector_store()
+            remover_antigo = True
+
+        total = 0
+        for i, arq in enumerate(existentes, start=1):
+            log(f"\n[{i}/{len(existentes)}] Indexando: {arq.name}")
+            total += self._indexar_um_arquivo(arq, log, remover_antigo=remover_antigo)
+
+        tempo_total = time.perf_counter() - t_inicio
+        total_atual = self._vector_store._collection.count()
+        log(f"\n[ok] {total} chunks inseridos ({len(existentes)} arquivo(s)) "
+            f"em {self._fmt_tempo(tempo_total)}.")
+        log(f"[base] Total de chunks na base agora: {total_atual}")
+
+        self.tempos_indexacao = {
+            "reindexado": True,
+            "zerou_base": zerar,
+            "arquivos": [a.name for a in existentes],
+            "total_chunks": total,
+            "total_chunks_base": total_atual,
+            "tempo_total_indexacao_s": round(tempo_total, 2),
+        }
+        return total
 
     def _get_retriever(self):
         if self._vector_store is None:
@@ -779,6 +848,7 @@ def executar_benchmarking(
     log: Callable[[str], None] | None = None,
     on_progress: Callable[[int, int, dict], None] | None = None,
     reindexar: bool = False,
+    arquivos_selecionados: list[str] | None = None,
 ) -> dict[str, Any]:
     """
     Executa o benchmarking completo para todas as perguntas.
@@ -790,7 +860,9 @@ def executar_benchmarking(
         modelo_execucao / modelo_juiz: overrides opcionais de modelo.
         log: callback para mensagens de log (console/UI).
         on_progress: callback (indice, total, resultado_parcial) por pergunta.
-        reindexar: força reindexação da base vetorial.
+        reindexar: se True, ZERA a base e reindexa antes de rodar.
+        arquivos_selecionados: nomes dos arquivos a reindexar quando
+            reindexar=True. Se vazio/None, NÃO reindexa nada (usa a base atual).
 
     Returns:
         Relatório no formato do contrato de saída.
@@ -815,7 +887,32 @@ def executar_benchmarking(
         log("[datajud] Validação de processos citados: DESATIVADA.")
 
     log("[rag] Preparando base de conhecimento (RAG)...")
-    pipeline.indexar_base(config.dados["base_juridica"], log=log, forcar=reindexar)
+    base_dir = config.dados["base_juridica"]
+    if reindexar:
+        # "Reindexar do zero ao executar": zera a base e reindexa APENAS os
+        # arquivos selecionados. Se nenhum foi selecionado, NÃO indexa nada
+        # (mantém o que já estiver no banco).
+        selecionados = arquivos_selecionados or []
+        if selecionados:
+            from pathlib import Path as _P
+            base_p = _P(base_dir)
+            caminhos = []
+            for nome in selecionados:
+                p = _P(nome)
+                if not p.exists():
+                    achados = list(base_p.glob(f"**/{nome}"))
+                    p = achados[0] if achados else p
+                caminhos.append(str(p))
+            log(f"[rag] Reindexar do zero: zerando base e reindexando "
+                f"{len(caminhos)} arquivo(s) selecionado(s).")
+            pipeline.indexar_selecionados(caminhos, log=log, zerar=True)
+        else:
+            log("[rag] 'Reindexar do zero' marcado, mas nenhum arquivo "
+                "selecionado — nada será reindexado; usando a base atual.")
+            pipeline.indexar_base(base_dir, log=log, forcar=False)
+    else:
+        # Sem reindexar: apenas carrega a base existente.
+        pipeline.indexar_base(base_dir, log=log, forcar=False)
 
     gab_idx = indexar_por_id(gabarito)
     total = len(perguntas)

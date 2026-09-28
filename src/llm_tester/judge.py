@@ -19,6 +19,47 @@ from .config import Config
 from .utils import com_backoff
 
 
+# Aproximação de tokens: para PT-BR, ~4 caracteres por token é uma estimativa
+# conservadora e barata (sem depender de tokenizer externo).
+_CHARS_POR_TOKEN = 4
+
+
+def _estimar_tokens(texto: str) -> int:
+    """Estima o número de tokens de um texto (aprox. 4 chars/token)."""
+    if not texto:
+        return 0
+    return (len(texto) + _CHARS_POR_TOKEN - 1) // _CHARS_POR_TOKEN
+
+
+def _truncar_por_tokens(texto: str, max_tokens: int) -> tuple[str, bool]:
+    """
+    Trunca `texto` para caber em `max_tokens` (aprox.), preservando o INÍCIO
+    (que costuma conter o essencial da resposta jurídica). Retorna
+    (texto_possivelmente_truncado, foi_truncado).
+    """
+    if max_tokens <= 0:
+        return "", bool(texto)
+    limite_chars = max_tokens * _CHARS_POR_TOKEN
+    if len(texto) <= limite_chars:
+        return texto, False
+    corte = texto[:limite_chars].rstrip()
+    return corte + "\n\n[...trecho truncado para respeitar o limite de tokens...]", True
+
+
+def _e_request_too_large(exc: Exception) -> bool:
+    """
+    Detecta o erro 413 da Groq ('request too large' / limite de TPM excedido),
+    independentemente do tipo exato da exceção lançada pelo cliente.
+    """
+    txt = str(exc).lower()
+    return (
+        "413" in txt
+        or "request too large" in txt
+        or "reduce your message size" in txt
+        or ("rate_limit" in txt and "tokens" in txt and "tpm" in txt)
+    )
+
+
 SYSTEM_PROMPT_JUIZ_TEMPLATE = """Você é um Juiz avaliador especializado em {especialidade}.
 
 Sua tarefa é avaliar DUAS respostas geradas por sistemas de IA para a MESMA pergunta,
@@ -102,6 +143,9 @@ class Judge:
                 temperature=0.0,
                 api_key=self.config.groq_api_key,
                 max_retries=0,
+                # O Juiz devolve só um JSON com duas avaliações curtas — um teto
+                # baixo de saída economiza o orçamento de tokens por minuto (TPM).
+                max_tokens=self.params.get("max_tokens_juiz", 1200),
                 model_kwargs={"response_format": {"type": "json_object"}},
             )
         return self._llm
@@ -124,40 +168,99 @@ class Judge:
         """
         from langchain_core.messages import SystemMessage, HumanMessage
 
-        user_msg = f"""## PERGUNTA:
-{pergunta}
+        # Molde da mensagem do usuário, com placeholders para as respostas.
+        # As respostas podem ser truncadas para caber no orçamento de tokens
+        # (limite TPM da conta). O truncamento afeta APENAS o que vai ao Juiz;
+        # as respostas completas continuam nos relatórios.
+        molde = (
+            "## PERGUNTA:\n{pergunta}\n\n"
+            "## GABARITO OFICIAL:\n{gabarito}\n\n"
+            "## RESPOSTA DA LLM PADRÃO (sem contexto):\n{rp}\n\n"
+            "## RESPOSTA DA LLM COM RAG (com contexto jurídico):\n{rr}\n\n"
+            "Avalie a resposta da LLM Padrão em \"avaliacao_llm_padrao\" e a "
+            "resposta da LLM com RAG em \"avaliacao_llm_rag\".\n"
+        )
 
-## GABARITO OFICIAL:
-{gabarito}
+        # Orçamento de tokens de ENTRADA (prompt) do Juiz. Deixamos margem para
+        # a saída (max_tokens_juiz) dentro do limite TPM da conta.
+        orcamento = int(self.params.get("juiz_orcamento_tokens_entrada", 6500))
 
-## RESPOSTA DA LLM PADRÃO (sem contexto):
-{resposta_padrao}
+        def montar_user_msg(rp: str, rr: str) -> str:
+            return molde.format(pergunta=pergunta, gabarito=gabarito, rp=rp, rr=rr)
 
-## RESPOSTA DA LLM COM RAG (com contexto jurídico):
-{resposta_rag}
+        def ajustar_para_orcamento(orc: int) -> tuple[str, bool]:
+            """
+            Trunca as respostas (proporcionalmente) para o prompt caber em `orc`
+            tokens. Preserva pergunta/gabarito/system integralmente; o corte
+            recai sobre as respostas, que são a maior fonte de tokens.
+            Retorna (user_msg, houve_truncamento).
+            """
+            fixo = (
+                _estimar_tokens(self.system_prompt)
+                + _estimar_tokens(montar_user_msg("", ""))
+            )
+            disponivel = max(orc - fixo, 200)  # nunca abaixo de um mínimo
+            tk_rp = _estimar_tokens(resposta_padrao)
+            tk_rr = _estimar_tokens(resposta_rag)
+            total_resp = tk_rp + tk_rr
 
-Avalie a resposta da LLM Padrão em "avaliacao_llm_padrao" e a resposta da LLM com RAG em "avaliacao_llm_rag".
-"""
-        mensagens = [
-            SystemMessage(content=self.system_prompt),
-            HumanMessage(content=user_msg),
-        ]
+            if total_resp <= disponivel:
+                return montar_user_msg(resposta_padrao, resposta_rag), False
+
+            # Divide o espaço disponível proporcionalmente ao tamanho de cada
+            # resposta (a maior cede mais), garantindo um mínimo para cada uma.
+            min_cada = min(300, disponivel // 2)
+            cota_rp = max(min_cada, int(disponivel * (tk_rp / total_resp)))
+            cota_rr = max(min_cada, disponivel - cota_rp)
+            rp_t, t1 = _truncar_por_tokens(resposta_padrao, cota_rp)
+            rr_t, t2 = _truncar_por_tokens(resposta_rag, cota_rr)
+            return montar_user_msg(rp_t, rr_t), (t1 or t2)
+
+        user_msg, _truncou = ajustar_para_orcamento(orcamento)
 
         llm = self._get_llm()
 
         def chamada():
             inicio = time.perf_counter()
-            resp = llm.invoke(mensagens)
+            resp = llm.invoke([
+                SystemMessage(content=self.system_prompt),
+                HumanMessage(content=user_msg),
+            ])
             decorrido = time.perf_counter() - inicio
             return resp.content, decorrido
 
-        content, tempo = com_backoff(
-            chamada,
-            max_retries=self.rate.get("max_retries", 6),
-            base_delay_s=self.rate.get("base_delay_s", 2.0),
-            max_delay_s=self.rate.get("max_delay_s", 60.0),
-            on_wait=on_wait,
-        )
+        try:
+            content, tempo = com_backoff(
+                chamada,
+                max_retries=self.rate.get("max_retries", 6),
+                base_delay_s=self.rate.get("base_delay_s", 2.0),
+                max_delay_s=self.rate.get("max_delay_s", 60.0),
+                on_wait=on_wait,
+            )
+        except Exception as exc:  # noqa: BLE001
+            # Erro 413 (request too large): o prompt ainda estourou o limite.
+            # Reduz o orçamento agressivamente e tenta mais uma vez.
+            if _e_request_too_large(exc):
+                orc_reduzido = int(orcamento * 0.6)
+                user_msg, _ = ajustar_para_orcamento(orc_reduzido)
+
+                def chamada2():
+                    inicio = time.perf_counter()
+                    resp = self._get_llm().invoke([
+                        SystemMessage(content=self.system_prompt),
+                        HumanMessage(content=user_msg),
+                    ])
+                    return resp.content, time.perf_counter() - inicio
+
+                content, tempo = com_backoff(
+                    chamada2,
+                    max_retries=self.rate.get("max_retries", 6),
+                    base_delay_s=self.rate.get("base_delay_s", 2.0),
+                    max_delay_s=self.rate.get("max_delay_s", 60.0),
+                    on_wait=on_wait,
+                )
+            else:
+                raise
 
         avaliacao = self._parse_json(content)
         avaliacao["tempo_avaliacao_juiz_s"] = round(tempo, 4)

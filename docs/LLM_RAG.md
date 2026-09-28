@@ -3,8 +3,8 @@
 **Projeto:** llm-tester
 **Componente:** LLM com RAG (Retrieval-Augmented Generation)
 **Arquivos-fonte:** `src/llm_tester/pipeline.py`, `src/llm_tester/config.py`
-**Versão do documento:** 1.1
-**Data:** 31/08/2026
+**Versão do documento:** 1.2
+**Data:** 05/09/2026
 
 ---
 
@@ -102,9 +102,27 @@ FASE 2 — CONSULTA (por pergunta, em tempo de execução)
 - **Vector store:** ChromaDB, persistido em `persist_directory`
   (padrão `data/chroma_db`) sob a coleção `collection_name`
   (padrão `pensao_por_morte`).
-- **Reuso vs. reindexação:** se já existe um vector store e `forcar=False`, a
-  coleção é apenas carregada; com `forcar=True` (ou `--reindexar`), a base é
-  reprocessada do zero.
+- **Indexação em lotes:** a inserção no ChromaDB é feita em blocos de
+  `index_batch_size` (padrão **200**) chunks, com log de progresso (lote atual,
+  %, chunks/s, tempo decorrido e ETA). Isso evita o pico de memória de gerar os
+  embeddings de dezenas de milhares de chunks de uma vez, que podia travar a
+  máquina.
+- **Reuso vs. reindexação total:** se já existe um vector store e `forcar=False`,
+  a coleção é apenas carregada; com `forcar=True` (ou `python reindexar.py` sem
+  argumentos), a base é reprocessada **do zero** — a collection inteira é
+  **apagada** (`_apagar_collection`, via `delete_collection`) e recriada, o que
+  garante um banco limpo sem chunks órfãos ou duplicados.
+- **Reindexação incremental (por arquivo):** é possível indexar/atualizar
+  **apenas alguns arquivos**, sem reprocessar a base inteira:
+  - `Pipeline.indexar_arquivo(caminho)` — um arquivo.
+  - `Pipeline.indexar_selecionados(caminhos, zerar=False)` — uma lista de
+    arquivos. Antes de reinserir cada arquivo, remove os chunks antigos daquele
+    `source` (`_remover_source`), evitando duplicatas.
+  - Com `zerar=True`, a base é apagada primeiro e reindexada **apenas** com os
+    arquivos selecionados (se a lista estiver vazia, nada é feito).
+  - Persistência do ChromaDB é garantida por `is_persistent=True` +
+    `persist_directory` no `Settings` (sem isso, o cliente poderia ficar em
+    memória e os dados sumirem ao encerrar o processo).
 
 ### 3.3. Recuperação (`Pipeline._recuperar_trechos`)
 
@@ -163,8 +181,9 @@ Todas em `config.json` (seção `parametros`), com defaults em `config.py`:
 | `mmr_lambda` | `0.7` | Peso relevância × diversidade no MMR (1.0 = só relevância) |
 | `collection_name` | `pensao_por_morte` | Coleção no ChromaDB |
 | `persist_directory` | `data/chroma_db` | Diretório de persistência do vector store |
+| `index_batch_size` | `200` | Tamanho do lote de inserção no ChromaDB (indexação em blocos) |
 | `temperature` | `0.0` | Determinismo da geração |
-| `max_tokens` | `4096` | Orçamento de tokens da resposta |
+| `max_tokens` | `1500` | Teto de tokens da resposta (execução). Reduzido de 4096 para caber melhor no limite gratuito da Groq |
 | `reasoning_effort` | `low` | Reduz tokens de raciocínio interno (modelos gpt-oss) |
 
 Parâmetros de ingestão de CSV (`parametros.csv_base_juridica`):
@@ -199,8 +218,19 @@ Parâmetros de rate limit (`config.rate_limit`) aplicados às chamadas de geraç
   **não** entra na latência medida.
 - **RN-R06 — Embeddings locais:** os embeddings são calculados localmente, sem
   custo de API e sem variabilidade de rede.
-- **RN-R07 — Persistência e reuso:** o índice é persistido e reutilizado; a
-  reindexação só ocorre sob demanda (`forcar=True` / `--reindexar`).
+- **RN-R07 — Persistência e reuso:** o índice é persistido e reutilizado. A
+  reindexação ocorre sob demanda em três modos: (a) **total** — apaga a
+  collection e reprocessa tudo; (b) **incremental por arquivo** — atualiza só os
+  arquivos selecionados, removendo antes os chunks antigos daquele `source` para
+  não duplicar; (c) **zerar + selecionados** — apaga a base e reindexa apenas os
+  arquivos escolhidos.
+- **RN-R11 — Indexação em lotes:** a inserção é feita em blocos de
+  `index_batch_size` para limitar o pico de memória; o progresso (%, chunks/s,
+  ETA) é registrado no log.
+- **RN-R12 — Persistência garantida:** o `Settings` do ChromaDB usa
+  `is_persistent=True` + `persist_directory` para assegurar que os embeddings
+  sejam gravados em disco (evita cliente em memória que perderia os dados ao
+  encerrar).
 - **RN-R08 — Isolamento por tema:** ao trocar de tema, deve-se trocar o
   `collection_name` ou reindexar, para não misturar embeddings de temas
   diferentes na mesma coleção.
@@ -306,7 +336,11 @@ Essas evoluções encaixam nos pontos de extensão já existentes:
 
 | Item | Localização |
 |------|-------------|
-| Ingestão / chunking / indexação | `pipeline.py` → `Pipeline.indexar_base` |
+| Ingestão / chunking / indexação total | `pipeline.py` → `Pipeline.indexar_base` |
+| Indexação incremental (por arquivo) | `pipeline.py` → `Pipeline.indexar_arquivo`, `Pipeline.indexar_selecionados`, `_indexar_um_arquivo`, `_remover_source` |
+| Apagar/zerar a collection | `pipeline.py` → `Pipeline._apagar_collection` |
+| Indexação em lotes (progresso/ETA) | `pipeline.py` → `Pipeline._inserir_chunks_lotes` |
+| Reindexação via CLI | `reindexar.py` (`--arquivo`, `--arquivos`, `--zerar`) |
 | Loader CSV com resumo de campos | `pipeline.py` → `Pipeline._carregar_csv_base`, `Pipeline._resumir_campo` |
 | Cronometragem da indexação | `pipeline.py` → `Pipeline.indexar_base`, `Pipeline._fmt_tempo` |
 | Embeddings | `pipeline.py` → `Pipeline._get_embeddings` |

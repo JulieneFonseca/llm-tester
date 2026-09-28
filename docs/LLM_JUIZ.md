@@ -3,8 +3,8 @@
 **Projeto:** llm-tester
 **Componente:** LLM Juiz (avaliação automatizada)
 **Arquivo-fonte:** `src/llm_tester/judge.py`
-**Versão do documento:** 1.1
-**Data:** 31/08/2026
+**Versão do documento:** 1.2
+**Data:** 05/09/2026
 
 ---
 
@@ -81,6 +81,7 @@ O cliente é instanciado (via `ChatGroq`) com:
 | `temperature` | `0.0` | Determinismo — avaliações estáveis e reproduzíveis |
 | `api_key` | `GROQ_API_KEY` | Autenticação (ambiente/.env) |
 | `max_retries` | `0` | O retry é tratado manualmente por `com_backoff` (fora da cronometragem) |
+| `max_tokens` | `max_tokens_juiz` (padrão `1200`) | Teto da **saída** do Juiz. Como ele devolve só um JSON com duas avaliações curtas, um teto baixo economiza o orçamento de tokens por minuto (TPM) da conta |
 | `model_kwargs` | `{"response_format": {"type": "json_object"}}` | Força saída em JSON parseável |
 
 Para o **parecer final** (texto livre), o Juiz usa uma segunda instância
@@ -108,6 +109,48 @@ Herdado de `config.rate_limit`:
 | `max_delay_s` | `60.0` |
 
 Backoff exponencial com *jitter*, acionado em HTTP 429.
+
+### 3.5. Controle de tokens (limite gratuito da Groq)
+
+O *free tier* da Groq impõe limites de **tokens por minuto (TPM)** e **tokens por
+dia (TPD)** por modelo. O prompt do Juiz é naturalmente grande (pergunta +
+gabarito + as duas respostas), e a resposta RAG costuma ser extensa por trazer
+muito contexto jurídico. Sem controle, o prompt pode exceder o limite TPM e a
+API retorna **HTTP 413 (request too large)**.
+
+Para operar no tier gratuito **sem perder qualidade dos relatórios**, o Juiz
+aplica três mecanismos (todos em `judge.py`):
+
+**a) Orçamento de tokens de entrada (`juiz_orcamento_tokens_entrada`, padrão 6500)**
+
+Antes de chamar a LLM, estima-se o total de tokens do prompt
+(`_estimar_tokens`, aproximação de ~4 caracteres por token). Se ultrapassar o
+orçamento, as **respostas** (Padrão e RAG) são truncadas — nunca a pergunta, o
+gabarito ou o system prompt.
+
+**b) Truncamento inteligente e proporcional (`_truncar_por_tokens`)**
+
+O espaço disponível (orçamento − partes fixas) é dividido **proporcionalmente**
+ao tamanho de cada resposta (a maior cede mais espaço), garantindo um mínimo
+para cada uma. O corte **preserva o início** de cada resposta (onde costuma
+estar o essencial da fundamentação jurídica) e adiciona um marcador de
+truncamento.
+
+> **Importante:** o truncamento afeta **apenas o texto enviado ao Juiz**. As
+> respostas **completas** continuam registradas nos relatórios (JSON/CSV) e no
+> dashboard — a qualidade dos dados de saída é preservada.
+
+**c) Retry no erro 413 (`_e_request_too_large`)**
+
+Se, mesmo após o ajuste, a API retornar 413, o Juiz detecta o erro (por código
+413, mensagens "request too large"/"reduce your message size" ou combinação de
+rate limit + TPM), **reduz o orçamento para 60%** e tenta novamente. Isso evita
+que uma única avaliação grande derrube toda a execução do benchmark.
+
+> **Limite diário (TPD):** o erro **HTTP 429 por TPD** (cota diária esgotada) é
+> um limite da conta e **não** é contornável por truncamento — só reabastece com
+> o tempo (janela diária) ou com upgrade de tier. Para render mais dentro da
+> cota, reduza `max_tokens`/`top_k` ou rode menos perguntas por vez.
 
 ---
 
@@ -165,6 +208,10 @@ O Juiz é instruído a avaliar a **resposta da LLM Padrão** em
 Nas justificativas, o Juiz é orientado a **sempre** se referir às respostas
 como "a resposta da LLM Padrão" e "a resposta da LLM com RAG" (nunca "A"/"B"),
 tornando o parecer mais legível.
+
+> As respostas dos blocos Padrão e RAG podem ser **truncadas** para respeitar o
+> orçamento de tokens de entrada (ver seção 3.5). O truncamento afeta somente o
+> que o Juiz recebe; as respostas completas permanecem nos relatórios.
 
 ### 5.2. Saída (JSON estrito)
 
@@ -270,6 +317,13 @@ por pergunta, com a abordagem vencedora e o texto), e exibido no **CLI**
 - **RN-J10 — Parecer não bloqueante:** a geração do parecer final é
   **tolerante a falhas**: se a chamada falhar, o benchmarking conclui
   normalmente e o parecer fica vazio no relatório (não interrompe a execução).
+- **RN-J11 — Orçamento de tokens de entrada:** o prompt do Juiz é mantido dentro
+  de `juiz_orcamento_tokens_entrada` (padrão 6500) truncando **apenas** as
+  respostas (proporcionalmente, preservando o início), nunca a pergunta, o
+  gabarito ou o system prompt. As respostas completas continuam nos relatórios.
+- **RN-J12 — Resiliência ao 413:** ao detectar "request too large" (HTTP 413), o
+  Juiz reduz o orçamento a 60% e refaz a chamada, evitando abortar a execução.
+  O limite **diário** (TPD, HTTP 429) não é contornável por truncamento.
 
 ---
 
@@ -305,10 +359,17 @@ Consequências dessa regra:
   `alucinacao_detectada = true`, sinalizando explicitamente o problema na
   justificativa.
 
-### 7.3. Rate limit
+### 7.3. Rate limit e tamanho de requisição
 
-Erros 429 acionam `com_backoff` (exponencial + jitter), respeitando os limites
-de `config.rate_limit`. Após esgotar `max_retries`, a exceção é propagada.
+- **HTTP 429 (rate limit por minuto):** aciona `com_backoff` (exponencial +
+  jitter), respeitando os limites de `config.rate_limit`. Após esgotar
+  `max_retries`, a exceção é propagada.
+- **HTTP 413 (request too large / TPM excedido):** o Juiz trunca as respostas
+  para caber no orçamento (seção 3.5) e, se ainda estourar, reduz o orçamento a
+  60% e refaz a chamada.
+- **HTTP 429 por TPD (cota diária):** não é contornável — depende de reabastecer
+  a cota (janela diária) ou de upgrade de tier. Reduzir `max_tokens`/`top_k` ou
+  rodar menos perguntas por vez ajuda a caber na cota.
 
 ---
 
@@ -340,6 +401,7 @@ retorno em `execucao_metadata.parecer_final_juiz` no relatório.
 | Item | Localização |
 |------|-------------|
 | Template do system prompt / rubrica | `judge.py` → `SYSTEM_PROMPT_JUIZ_TEMPLATE` |
+| Controle de tokens (estimativa/truncamento/413) | `judge.py` → `_estimar_tokens`, `_truncar_por_tokens`, `_e_request_too_large`, `Judge.avaliar` |
 | Configuração do cliente LLM (JSON) | `judge.py` → `Judge._get_llm` |
 | Configuração do cliente LLM (texto) | `judge.py` → `Judge._get_llm_texto` |
 | Montagem por especialidade (tema) | `judge.py` → `Judge.__init__` |

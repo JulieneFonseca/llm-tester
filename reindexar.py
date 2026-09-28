@@ -6,9 +6,12 @@ Modos de uso:
   # Reindexa TODA a base do zero (apaga e reprocessa tudo):
   python reindexar.py
 
-  # Indexa/atualiza APENAS um arquivo específico (mantém o resto intacto):
-  python reindexar.py --arquivo "nome do arquivo.pdf"
-  python reindexar.py --arquivo "data/base_juridica/nome do arquivo.pdf"
+  # Indexa/atualiza arquivos específicos (incremental — mantém o resto):
+  python reindexar.py --arquivos "a.pdf" "b.csv"
+  python reindexar.py --arquivo "nome do arquivo.pdf"      # atalho p/ um só
+
+  # Zera a base e reindexa APENAS os arquivos selecionados:
+  python reindexar.py --arquivos "a.pdf" "b.csv" --zerar
 
 A indexação ocorre em lotes (index_batch_size no config.json) para não
 estourar a memória. O progresso é impresso no stdout e gravado em
@@ -61,10 +64,26 @@ def main() -> int:
     ap.add_argument(
         "--arquivo",
         default=None,
-        help="Indexa/atualiza APENAS este arquivo (nome ou caminho). "
-             "Se omitido, reindexa TODA a base do zero.",
+        help="Atalho para indexar um único arquivo (nome ou caminho).",
+    )
+    ap.add_argument(
+        "--arquivos",
+        nargs="+",
+        default=None,
+        help="Lista de arquivos a indexar (nomes ou caminhos, separados por espaço).",
+    )
+    ap.add_argument(
+        "--zerar",
+        action="store_true",
+        help="Zera TODA a base antes de reindexar (usado com --arquivos/--arquivo). "
+             "Sem --arquivos, reindexa a base completa do zero.",
     )
     args = ap.parse_args()
+
+    # Unifica --arquivo e --arquivos numa lista só.
+    selecionados = list(args.arquivos) if args.arquivos else []
+    if args.arquivo:
+        selecionados.append(args.arquivo)
 
     log_file = open("_reindex_log.txt", "w", encoding="utf-8")
 
@@ -83,13 +102,14 @@ def main() -> int:
         pipeline = Pipeline(config)
         t0 = time.perf_counter()
 
-        if args.arquivo:
-            caminho = _resolver_arquivo(args.arquivo, base_dir)
-            log(f"[init] Modo INCREMENTAL — arquivo: {caminho}")
-            n = pipeline.indexar_arquivo(caminho, log=log)
-            escopo = f"arquivo '{args.arquivo}'"
+        if selecionados:
+            caminhos = [_resolver_arquivo(n, base_dir) for n in selecionados]
+            modo = "ZERAR + selecionados" if args.zerar else "incremental (selecionados)"
+            log(f"[init] Modo: {modo} — {len(caminhos)} arquivo(s).")
+            n = pipeline.indexar_selecionados(caminhos, log=log, zerar=args.zerar)
+            escopo = f"{len(caminhos)} arquivo(s) selecionado(s)"
         else:
-            log("[init] Modo COMPLETO — reindexando toda a base.")
+            log("[init] Modo COMPLETO — reindexando toda a base do zero.")
             n = pipeline.indexar_base(base_dir, log=log, forcar=True)
             escopo = "base completa"
 

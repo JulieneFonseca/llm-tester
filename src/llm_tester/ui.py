@@ -263,14 +263,15 @@ def _aba_configuracao():
     reindexar = st.checkbox(
         "Reindexar base do zero ao executar",
         value=False,
-        help="Quando marcado, a próxima execução reprocessa TODA a base antes "
-             "de rodar as perguntas. Para indexar agora (sem executar), use os "
-             "controles abaixo.",
+        help="Quando marcado, ao executar o benchmark a base é ZERADA e "
+             "reindexada apenas com os arquivos selecionados abaixo. Se nenhum "
+             "arquivo estiver selecionado, nada é reindexado (usa a base atual).",
     )
     st.session_state["reindexar"] = reindexar
 
-    # Controles de indexação imediata (arquivo específico ou base completa).
-    with st.expander("🔁 Indexar agora (sem executar)", expanded=False):
+    # Seleção de arquivos + indexação imediata. A mesma seleção é usada pelo
+    # benchmark quando 'Reindexar base do zero ao executar' está marcado.
+    with st.expander("🔁 Seleção de arquivos e indexação", expanded=False):
         _secao_reindexacao(cfg, contexto="config")
 
     st.divider()
@@ -527,6 +528,7 @@ def _iniciar_benchmarking(
             log=log,
             on_progress=on_progress,
             reindexar=ss.get("reindexar", False),
+            arquivos_selecionados=ss.get("reindex_selecao_config", []),
         )
         ss["relatorio"] = relatorio
         # Persiste em outputs/
@@ -1025,21 +1027,35 @@ def _listar_arquivos_base(cfg: Config) -> list[str]:
     return sorted(a.name for a in arquivos)
 
 
-def _disparar_reindexacao(arquivo: str | None) -> None:
+def _disparar_reindexacao(arquivos: list[str] | str | None = None,
+                          zerar: bool = False) -> None:
     """
     Dispara o reindexar.py como processo SEPARADO (não trava a UI).
 
-    Se `arquivo` for None, reindexa toda a base; senão, só o arquivo indicado.
+    - arquivos None/vazio: reindexa TODA a base do zero.
+    - arquivos com itens: indexa só esses arquivos (incremental).
+    - arquivos + zerar=True: zera a base e reindexa só os selecionados.
+
     O progresso vai para _reindex_log.txt, exibido na própria aba.
     """
     import subprocess
     import os as _os
 
+    # Normaliza para lista.
+    if arquivos is None:
+        lista = []
+    elif isinstance(arquivos, str):
+        lista = [arquivos]
+    else:
+        lista = list(arquivos)
+
     # Usa o mesmo interpretador Python que roda a UI.
     py = sys.executable
     cmd = [py, "reindexar.py"]
-    if arquivo:
-        cmd += ["--arquivo", arquivo]
+    if lista:
+        cmd += ["--arquivos", *lista]
+    if zerar:
+        cmd += ["--zerar"]
 
     env = dict(_os.environ)
     env["ANONYMIZED_TELEMETRY"] = "False"
@@ -1057,40 +1073,43 @@ def _secao_reindexacao(cfg: Config, contexto: str = "rag"):
     """
     st.subheader("🔁 Reindexação")
     st.caption(
-        "Atualize a base vetorial. A indexação roda em segundo plano; "
-        "acompanhe o progresso abaixo."
+        "Selecione os arquivos e clique em Indexar. A indexação roda em segundo "
+        "plano; acompanhe o progresso abaixo. Deixe a lista vazia para reindexar "
+        "toda a base."
     )
 
     arquivos = _listar_arquivos_base(cfg)
 
-    col_a, col_b = st.columns([0.6, 0.4])
-    with col_a:
-        alvo = st.selectbox(
-            "Escopo da reindexação",
-            options=["(Toda a base)"] + arquivos,
-            help="Escolha um arquivo para indexar/atualizar só ele, ou "
-                 "'(Toda a base)' para reprocessar tudo do zero.",
-            key=f"reindex_alvo_{contexto}",
-        )
-    with col_b:
-        st.write("")
-        st.write("")
-        if alvo == "(Toda a base)":
-            if st.button("♻️ Reindexar tudo", use_container_width=True,
-                         key=f"reindex_tudo_{contexto}"):
-                _disparar_reindexacao(None)
-                st.session_state["_reindex_disparada"] = True
-                st.warning(
-                    "Reindexação TOTAL iniciada em segundo plano "
-                    "(pode levar bastante tempo)."
-                )
-        else:
-            if st.button("📄 Indexar este arquivo", type="primary",
-                         use_container_width=True,
-                         key=f"reindex_arquivo_{contexto}"):
-                _disparar_reindexacao(alvo)
-                st.session_state["_reindex_disparada"] = True
-                st.success(f"Indexação de '{alvo}' iniciada em segundo plano.")
+    # Multisseleção de arquivos. A seleção fica em session_state (com key), o que
+    # também permite ao benchmark ('Reindexar do zero ao executar') saber quais
+    # arquivos usar.
+    selecao = st.multiselect(
+        "Escopo da reindexação (selecione um ou mais arquivos)",
+        options=arquivos,
+        help="Escolha os arquivos a indexar/atualizar. Se nenhum for "
+             "selecionado, o botão reindexa TODA a base do zero.",
+        key=f"reindex_selecao_{contexto}",
+    )
+
+    col_b1, col_b2 = st.columns(2)
+    with col_b1:
+        if st.button("📄 Indexar selecionados", type="primary",
+                     use_container_width=True, disabled=not selecao,
+                     key=f"reindex_sel_{contexto}"):
+            _disparar_reindexacao(selecao, zerar=False)
+            st.session_state["_reindex_disparada"] = True
+            st.success(
+                f"Indexação de {len(selecao)} arquivo(s) iniciada em segundo plano."
+            )
+    with col_b2:
+        if st.button("♻️ Reindexar toda a base", use_container_width=True,
+                     key=f"reindex_tudo_{contexto}"):
+            _disparar_reindexacao(None)
+            st.session_state["_reindex_disparada"] = True
+            st.warning(
+                "Reindexação TOTAL (todos os arquivos) iniciada em segundo plano "
+                "(pode levar bastante tempo)."
+            )
 
     # Progresso (lido do arquivo de log gerado pelo reindexar.py)
     log_path = Path("_reindex_log.txt")

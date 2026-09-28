@@ -2,8 +2,8 @@
 
 **Projeto:** llm-tester — Benchmarking e Avaliação de LLMs (Padrão vs. RAG)
 **Domínio de referência:** Direito Previdenciário — Pensão por Morte (tema configurável)
-**Versão do documento:** 1.1
-**Data:** 31/08/2026
+**Versão do documento:** 1.2
+**Data:** 05/09/2026
 
 ---
 
@@ -53,7 +53,7 @@ reutilizar o sistema em outros temas jurídicos sem alteração de código.
 ### 2.1. Perspectiva do produto
 
 O llm-tester é uma aplicação local (desktop/servidor pessoal) executada sobre
-Python, com duas interfaces de uso: uma web (Streamlit, 4 abas) e uma de linha
+Python, com duas interfaces de uso: uma web (Streamlit, 5 abas) e uma de linha
 de comando (CLI, execução headless). Depende de serviços externos para
 inferência das LLMs (Groq API) e para validação factual de processos (API
 Pública do DataJud/CNJ). Os embeddings são gerados localmente (HuggingFace),
@@ -62,7 +62,10 @@ sem custo e sem dependência de rede.
 ### 2.2. Funções principais
 
 - Ingestão e indexação vetorial de uma base jurídica (PDF/TXT/CSV), com
-  cronometragem das fases da indexação.
+  cronometragem das fases da indexação, indexação em lotes e reindexação
+  incremental por arquivo (além da total).
+- Visualização do estado do RAG (parâmetros, chunks indexados, fontes por
+  arquivo e teste de busca semântica) na aba RAG.
 - Execução das duas abordagens (Padrão e RAG) com cronometragem por etapa.
 - Avaliação automatizada das respostas por uma LLM Juiz, incluindo um parecer
   final consolidado que posiciona a abordagem vencedora.
@@ -80,8 +83,10 @@ sem custo e sem dependência de rede.
 
 ### 2.4. Restrições e premissas
 
-- Requer Python 3.10+.
+- Requer Python 3.10+ (ambiente de referência: Python 3.11).
 - Requer chave de API da Groq (`GROQ_API_KEY`) para inferência das LLMs.
+- Opera sob os limites do *free tier* da Groq (TPM e TPD por modelo); execuções
+  extensas podem exigir aguardar o reabastecimento da cota diária.
 - A validação DataJud cobre **apenas** Tribunais Regionais Federais (TRF1–TRF6).
 - O vector store (ChromaDB) deve residir em disco **local** (evita locks/corrupção).
 - Arquivos de base podem estar em pasta de nuvem **sincronizada** (caminho de
@@ -107,11 +112,15 @@ Os requisitos abaixo refletem o comportamento implementado no código.
 - **RF-04 — Seleção de modelos:** o sistema deve permitir escolher o modelo de
   execução e o modelo Juiz dentre a lista de modelos disponíveis (Groq).
 - **RF-05 — Parâmetros de execução:** deve permitir ajustar `temperature`,
-  `max_tokens`, `reasoning_effort`, `chunk_size`, `chunk_overlap`, `top_k`,
-  `search_type` (mmr/similarity), `mmr_lambda`, `embedding_model`,
-  `collection_name`, `persist_directory` e as opções de ingestão de CSV
-  (`csv_base_juridica`: `delimitador`, `limite_campo_chars`, `resumo_max_chars`,
-  `campos_ignorar`).
+  `max_tokens` (padrão 1500), `reasoning_effort`, `chunk_size`, `chunk_overlap`,
+  `top_k`, `search_type` (mmr/similarity), `mmr_lambda`, `embedding_model`,
+  `collection_name`, `persist_directory`, `index_batch_size` (lote de indexação,
+  padrão 200) e as opções de ingestão de CSV (`csv_base_juridica`:
+  `delimitador`, `limite_campo_chars`, `resumo_max_chars`, `campos_ignorar`).
+- **RF-05a — Controle de tokens (limite gratuito):** deve permitir configurar o
+  teto de saída do Juiz (`max_tokens_juiz`, padrão 1200) e o orçamento de tokens
+  de entrada do Juiz (`juiz_orcamento_tokens_entrada`, padrão 6500), usados para
+  operar dentro dos limites de tokens por minuto (TPM) do *free tier* da Groq.
 
 ### 3.2. Dados de teste
 
@@ -144,7 +153,22 @@ Os requisitos abaixo refletem o comportamento implementado no código.
   chunking + deduplicação e indexação vetorial, além do total (segundos e
   minutos) e do *throughput* em chunks/s.
 - **RF-12 — Reuso e reindexação:** deve reutilizar um vector store existente e
-  permitir forçar a reindexação do zero (flag/`--reindexar`).
+  oferecer três modos de reindexação:
+  - **Total:** apaga a collection inteira e reprocessa todos os arquivos da base
+    (botão "Reindexar toda a base" ou `reindexar.py` sem argumentos).
+  - **Incremental por arquivo:** indexa/atualiza apenas os arquivos selecionados
+    (multisseleção na interface, ou `reindexar.py --arquivos ...`), removendo os
+    chunks antigos de cada arquivo antes de reinserir (evita duplicatas), sem
+    afetar o resto da base.
+  - **Zerar + selecionados:** apaga a base e reindexa apenas os arquivos
+    selecionados. Este é o comportamento do "Reindexar base do zero ao executar"
+    quando o benchmark é iniciado; se nenhum arquivo estiver selecionado, nada é
+    reindexado (usa a base atual).
+- **RF-12a — Indexação em lotes:** a inserção no ChromaDB é feita em blocos de
+  `index_batch_size` (padrão 200), com progresso (lote, %, chunks/s, ETA),
+  limitando o pico de memória.
+- **RF-12b — Persistência garantida:** o vector store é aberto com
+  `is_persistent=True` e `persist_directory`, assegurando gravação em disco.
 - **RF-13 — Recuperação (retrieval):** deve recuperar `top_k` (padrão 8) trechos
   relevantes à pergunta, com estratégia **MMR** (diversidade, padrão) ou
   similaridade pura, buscando diretamente na collection do ChromaDB e
@@ -186,6 +210,12 @@ Os requisitos abaixo refletem o comportamento implementado no código.
   identificando a abordagem vencedora, e registrá-lo no relatório
   (`parecer_final_juiz`). A falha na geração do parecer não deve interromper a
   execução.
+- **RF-22c — Orçamento de tokens do Juiz:** o prompt do Juiz deve ser mantido
+  dentro de um orçamento de tokens de entrada (`juiz_orcamento_tokens_entrada`),
+  truncando **apenas** as respostas (proporcionalmente, preservando o início),
+  nunca a pergunta ou o gabarito. As respostas completas permanecem nos
+  relatórios. Em caso de HTTP 413 (request too large), o Juiz deve reduzir o
+  orçamento e refazer a chamada, sem abortar a execução.
 
 ### 3.6. Validação factual (DataJud)
 
@@ -231,9 +261,19 @@ Os requisitos abaixo refletem o comportamento implementado no código.
 ### 3.8. Interface e controle de execução
 
 - **RF-36 — Interface web em abas:** Configurações, Dados, Execução (lote e
-  individual) e Resultados.
-- **RF-37 — CLI headless:** deve permitir executar via `main.py` com `--config`,
-  `--reindexar` e `--modelo`.
+  individual), Resultados e **RAG** (visualização dos parâmetros do RAG, estado
+  do ChromaDB, fontes indexadas e teste de busca semântica).
+- **RF-36a — Controles de reindexação na interface:** na aba Configurações →
+  Base Jurídica, deve haver multisseleção de arquivos e os botões "Indexar
+  selecionados" (incremental) e "Reindexar toda a base" (total), além do
+  checkbox "Reindexar base do zero ao executar" (que zera e reindexa só os
+  selecionados no início do benchmark). O botão "Indexar selecionados" é sempre
+  incremental e **não** depende do checkbox; a seleção é compartilhada com o
+  benchmark.
+- **RF-37 — CLI headless:** deve permitir executar o benchmark via `main.py`
+  (`--config`, `--reindexar`, `--modelo`) e a reindexação via `reindexar.py`
+  (sem argumentos = base completa; `--arquivo`/`--arquivos` = incremental;
+  `--zerar` = apaga a base antes de reindexar os selecionados).
 - **RF-38 — Logs em tempo real:** deve exibir o andamento (por pergunta, etapas,
   notas do Juiz, validações DataJud e eventos de rate limit).
 - **RF-39 — Seleção de perguntas em lote:** deve oferecer "Selecionar todas" e
@@ -294,6 +334,11 @@ Os requisitos abaixo refletem o comportamento implementado no código.
 
 - **RNF-15:** o sistema deve operar com o *free tier* da Groq e embeddings
   locais, mantendo o custo próximo de zero.
+- **RNF-16:** o sistema deve respeitar os limites do *free tier* da Groq —
+  tokens por minuto (TPM) e tokens por dia (TPD) — por meio de `max_tokens`
+  reduzido, orçamento/truncamento do prompt do Juiz e tratamento do HTTP 413.
+  O limite diário (TPD) não é contornável por software: depende do reabastecimento
+  da cota ou de upgrade de tier.
 
 ---
 
@@ -359,6 +404,12 @@ contendo o parecer final da LLM Juiz).
    validação DataJud.
 4. **Execução headless (CLI):** rodar `python main.py --config config.json`
    (opcionalmente `--reindexar` e `--modelo`) para gerar relatórios sem interface.
+5. **Reindexação incremental (CLI):** `python reindexar.py --arquivos "a.pdf" "b.csv"`
+   para atualizar só alguns arquivos; adicionar `--zerar` para apagar a base e
+   reindexar apenas os selecionados; sem argumentos, reprocessa a base completa.
+6. **Inspecionar o vector store:** `python inspecionar_chroma.py` para ver o total
+   de chunks, as fontes indexadas e testar buscas semânticas (também disponível
+   na aba RAG da interface).
 
 ---
 
@@ -377,10 +428,11 @@ contendo o parecer final da LLM Juiz).
 |-----------|--------------------------|
 | RF-01 a RF-05 | `config.py`, `config.json`, `ui.py` |
 | RF-06 a RF-08 | `utils.py` (carregar/salvar/indexar), `ui.py` |
-| RF-09 a RF-13 | `pipeline.py` (`indexar_base`, `_carregar_csv_base`, `_recuperar_trechos`) |
+| RF-09 a RF-13 | `pipeline.py` (`indexar_base`, `indexar_arquivo`, `indexar_selecionados`, `_apagar_collection`, `_inserir_chunks_lotes`, `_carregar_csv_base`, `_recuperar_trechos`), `reindexar.py` |
 | RF-14 a RF-18 | `pipeline.py` (`executar_padrao`, `executar_rag`), `ui.py` |
-| RF-19 a RF-22 | `judge.py` |
+| RF-19 a RF-22c | `judge.py` (inclui `_estimar_tokens`, `_truncar_por_tokens`, `_e_request_too_large`) |
 | RF-23 a RF-29 | `datajud.py` |
 | RF-30 a RF-35 | `pipeline.py`, `utils.py` (métricas/relatório), `ui.py` |
-| RF-36 a RF-41 | `ui.py`, `main.py` |
+| RF-36 a RF-41 | `ui.py` (5 abas, multisseleção/reindexação), `main.py`, `reindexar.py` |
 | RNF-04 (backoff) | `utils.py` (`com_backoff`) |
+| RNF-16 (limites TPM/TPD) | `judge.py` (orçamento/truncamento/413), `config.json` (`max_tokens`, `max_tokens_juiz`, `juiz_orcamento_tokens_entrada`) |
