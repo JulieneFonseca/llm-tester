@@ -17,20 +17,20 @@ if errorlevel 1 (
 )
 
 REM -- Cria o ambiente virtual na primeira execucao ------------
-if not exist ".venv\Scripts\activate.bat" (
-    echo [setup] Criando ambiente virtual .venv...
-    python -m venv .venv
+if not exist ".venv2\Scripts\activate.bat" (
+    echo [setup] Criando ambiente virtual .venv2...
+    python -m venv .venv2
     if errorlevel 1 (
         echo [ERRO] Falha ao criar o ambiente virtual.
         pause
         exit /b 1
     )
-    call ".venv\Scripts\activate.bat"
+    call ".venv2\Scripts\activate.bat"
     echo [setup] Instalando dependencias...
     python -m pip install --upgrade pip
     pip install -r requirements.txt
 ) else (
-    call ".venv\Scripts\activate.bat"
+    call ".venv2\Scripts\activate.bat"
 )
 
 REM -- Aviso sobre a chave de API ------------------------------
@@ -43,6 +43,6 @@ if not exist ".env" (
 
 REM -- Inicia a interface web ---------------------------------
 echo [run] Iniciando llm-tester (Streamlit)...
-streamlit run app.py
+python -m streamlit run app.py --server.headless true
 
 endlocal

@@ -102,6 +102,14 @@ class Pipeline:
         limite_campo = csv_config.get("limite_campo_chars", 500)
         resumo_max = csv_config.get("resumo_max_chars", 500)
         campos_ignorar = set(csv_config.get("campos_ignorar", []))
+        # Modo "conteúdo explícito": quando `campos_conteudo` é definido, apenas
+        # essas colunas formam o texto do chunk (SEM truncar) e `campos_metadados`
+        # vira metadata. Ideal para jurisprudência (ex.: a EMENTA é o resumo
+        # oficial do acórdão e deve ir inteira para o índice, enquanto a DECISÃO
+        # COMPLETA fica fora). Se vazio, usa a lógica genérica antiga.
+        campos_conteudo = csv_config.get("campos_conteudo") or []
+        campos_metadados = csv_config.get("campos_metadados") or []
+        limite_metadado = csv_config.get("limite_metadado_chars", 200)
         # Delimitador do CSV. Padrão ';' porque as ementas contêm muitas
         # vírgulas no texto, e a extração usa ';' como separador de colunas.
         # Use "auto" para detectar automaticamente entre ';', ',' e tab.
@@ -133,38 +141,59 @@ class Pipeline:
         documentos = []
         campos_resumidos_log: set[str] = set()
 
+        import re
+
+        def _norm(nome: str) -> str:
+            """Normaliza nome de coluna p/ casar sem depender de caixa/espaços."""
+            return re.sub(r"\s+", " ", str(nome).strip()).casefold()
+
+        conteudo_norm = {_norm(c) for c in campos_conteudo}
+        metadados_norm = {_norm(c) for c in campos_metadados}
+        ignorar_norm = {_norm(c) for c in campos_ignorar}
+        modo_explicito = bool(conteudo_norm)
+
         for idx, row in enumerate(linhas):
             partes_conteudo: list[str] = []
             metadata: dict[str, Any] = {"source": str(caminho), "csv_row": idx}
 
-            for campo, valor in row.items():
-                # Campos extras (linha com mais colunas que o cabeçalho) vêm
-                # sob a chave None como lista — nome de coluna inválido, ignora.
-                if campo is None:
-                    continue
-                if valor is None or campo in campos_ignorar:
-                    continue
-
-                # DictReader pode devolver lista quando há colunas a mais na
-                # linha; normaliza qualquer valor para string única.
+            def _valor_str(valor) -> str:
                 if isinstance(valor, (list, tuple)):
-                    valor = " ".join(str(v) for v in valor if v is not None)
-                else:
-                    valor = str(valor)
+                    return " ".join(str(v) for v in valor if v is not None).strip()
+                return str(valor).strip() if valor is not None else ""
 
-                valor_limpo = valor.strip()
-                if not valor_limpo:
-                    continue
-                if len(valor_limpo) > limite_campo:
-                    # Resumo inteligente: preserva sentenças completas até o limite
-                    valor_resumido = self._resumir_campo(valor_limpo, resumo_max)
-                    partes_conteudo.append(f"{campo}: {valor_resumido}")
-                    campos_resumidos_log.add(campo)
-                else:
-                    partes_conteudo.append(f"{campo}: {valor_limpo}")
-                    # Campos curtos vão para metadata (facilitam filtragem)
-                    if len(valor_limpo) <= 200:
-                        metadata[campo] = valor_limpo
+            if modo_explicito:
+                # MODO 1 (jurisprudência): só os campos escolhidos viram conteúdo,
+                # SEM truncar; os demais escolhidos viram metadata; resto ignorado.
+                for campo, valor in row.items():
+                    if campo is None:
+                        continue
+                    cn = _norm(campo)
+                    valor_limpo = _valor_str(valor)
+                    if not valor_limpo or cn in ignorar_norm:
+                        continue
+                    if cn in conteudo_norm:
+                        partes_conteudo.append(f"{campo}: {valor_limpo}")
+                    elif cn in metadados_norm:
+                        # Metadado curto (evita estourar o tamanho do metadata).
+                        metadata[campo] = valor_limpo[:limite_metadado]
+            else:
+                # MODO LEGADO: concatena tudo, resumindo campos grandes.
+                for campo, valor in row.items():
+                    if campo is None:
+                        continue
+                    if valor is None or _norm(campo) in ignorar_norm:
+                        continue
+                    valor_limpo = _valor_str(valor)
+                    if not valor_limpo:
+                        continue
+                    if len(valor_limpo) > limite_campo:
+                        valor_resumido = self._resumir_campo(valor_limpo, resumo_max)
+                        partes_conteudo.append(f"{campo}: {valor_resumido}")
+                        campos_resumidos_log.add(campo)
+                    else:
+                        partes_conteudo.append(f"{campo}: {valor_limpo}")
+                        if len(valor_limpo) <= 200:
+                            metadata[campo] = valor_limpo
 
             if partes_conteudo:
                 doc = Document(
@@ -839,6 +868,57 @@ class Pipeline:
 # Orquestração de alto nível (usada por CLI e UI)
 # ---------------------------------------------------------------------------
 
+def _montar_gabarito_estruturado(gab_item: dict) -> str:
+    """
+    Monta o texto do gabarito enviado ao Juiz, agregando — quando presentes —
+    os campos ricos do dataset: resposta esperada, sentimento esperado,
+    referências legais/jurisprudenciais, pontos obrigatórios e critérios
+    inaceitáveis. Isso permite ao Juiz avaliar as respostas contra um gabarito
+    completo, não apenas o texto-resumo.
+
+    Campos ausentes são simplesmente omitidos (robusto a gabaritos simples).
+    """
+    if not gab_item:
+        return ""
+
+    partes: list[str] = []
+
+    resposta = (
+        gab_item.get("resposta_esperada")
+        or gab_item.get("gabarito_oficial")
+        or gab_item.get("resposta_referencia")
+        or ""
+    )
+    if resposta:
+        partes.append(f"RESPOSTA ESPERADA:\n{resposta}")
+
+    sentimento = gab_item.get("sentimento_esperado")
+    if sentimento:
+        partes.append(f"SENTIMENTO ESPERADO: {sentimento}")
+
+    julgados = gab_item.get("julgados_solicitados")
+    if isinstance(julgados, int) and julgados > 0:
+        partes.append(f"JULGADOS SOLICITADOS NA PERGUNTA: {julgados}")
+
+    def _lista(campo: str, titulo: str):
+        valores = gab_item.get(campo)
+        if isinstance(valores, list) and valores:
+            linhas = "\n".join(f"- {v}" for v in valores)
+            partes.append(f"{titulo}:\n{linhas}")
+        elif isinstance(valores, str) and valores.strip():
+            partes.append(f"{titulo}:\n- {valores.strip()}")
+
+    _lista("referencias", "REFERÊNCIA (legislação, súmulas, julgados e fontes)")
+    _lista("pontos_obrigatorios", "PONTOS OBRIGATÓRIOS (devem constar na resposta)")
+    _lista("criterios_inaceitaveis", "INACEITÁVEL (erros expressamente vedados)")
+
+    ementa = gab_item.get("ementa_esperada")
+    if isinstance(ementa, str) and ementa.strip():
+        partes.append(f"EMENTA DE REFERÊNCIA:\n{ementa.strip()}")
+
+    return "\n\n".join(partes)
+
+
 def executar_benchmarking(
     config: Config,
     perguntas: list[dict],
@@ -922,7 +1002,7 @@ def executar_benchmarking(
         pid = str(p.get("id", p.get("id_pergunta", i)))
         pergunta = p.get("pergunta", "")
         gab_item = gab_idx.get(pid, {})
-        gab_texto = gab_item.get("gabarito_oficial", gab_item.get("resposta_referencia", ""))
+        gab_texto = _montar_gabarito_estruturado(gab_item)
 
         log(f"\n> Pergunta {i}/{total} ({pid}): {pergunta[:60]}...")
 
@@ -952,14 +1032,27 @@ def executar_benchmarking(
         log(f"   [juiz] Juiz avaliou em {aval['tempo_avaliacao_juiz_s']}s")
 
         def _fmt_notas(rotulo: str, av: dict):
-            aluc = "SIM" if av.get("alucinacao_detectada") else "não"
-            fund = "SIM" if av.get("fundamentacao_correta") else "não"
+            erros = av.get("erros_criticos") or []
+            n_erros = len(erros) if isinstance(erros, list) else 0
+            sent = av.get("sentimento_identificado", "?")
+            aderente = av.get("sentimento_aderente_gabarito")
+            aderente_txt = (
+                "aderente" if aderente is True
+                else "divergente" if aderente is False
+                else "n/a"
+            )
             log(
                 f"   [juiz:{rotulo}] fidelidade={av.get('nota_fidelidade')}/5 | "
                 f"precisão={av.get('nota_precisao_gabarito')}/5 | "
                 f"completude={av.get('nota_completude')}/5 | "
-                f"alucinação={aluc} | fundamentação={fund}"
+                f"sentimento={sent} ({aderente_txt}) | "
+                f"julgados={av.get('julgados_apresentados')}/"
+                f"{av.get('julgados_solicitados')} "
+                f"(verif. {av.get('julgados_verificaveis')}) | "
+                f"erros_críticos={n_erros}"
             )
+            for e in (erros if isinstance(erros, list) else []):
+                log(f"   [juiz:{rotulo}] erro crítico: {e}")
             justificativa = av.get("justificativa_juiz")
             if justificativa:
                 log(f"   [juiz:{rotulo}] justificativa: {justificativa}")

@@ -42,3 +42,6 @@ outputs/*.csv
 # OS
 Thumbs.db
 .DS_Store
+
+# Arquivos de lock temporários do MS Office (Word/Excel)
+~$*

@@ -33,7 +33,7 @@
   "parametros": {
     "temperature": 0.0,
     "max_tokens": 1500,
-    "max_tokens_juiz": 1200,
+    "max_tokens_juiz": 2000,
     "juiz_orcamento_tokens_entrada": 6500,
     "reasoning_effort": "low",
     "chunk_size": 1500,
@@ -46,10 +46,13 @@
     "persist_directory": "data/chroma_db",
     "index_batch_size": 200,
     "csv_base_juridica": {
-      "delimitador": ";",
+      "delimitador": "auto",
       "limite_campo_chars": 500,
       "resumo_max_chars": 500,
-      "campos_ignorar": []
+      "limite_metadado_chars": 200,
+      "campos_conteudo": ["EMENTA"],
+      "campos_metadados": ["Nº", "TRIBUNAL", "CLASSE", "TURMA", "JULGADOR", "PROCESSO JUDICIAL", "DATA PUBLICAÇÃO", "TIPO EMENTA"],
+      "campos_ignorar": ["DECISÃO COMPLETA"]
     }
   },
   "rate_limit": {

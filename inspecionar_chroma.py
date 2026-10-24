@@ -5,6 +5,7 @@ Uso:
   python inspecionar_chroma.py                 # resumo + amostras
   python inspecionar_chroma.py --n 10          # 10 amostras
   python inspecionar_chroma.py --busca "pensao por morte"   # busca por texto
+  python inspecionar_chroma.py --fontes        # chunks por arquivo (fonte)
 
 Observação: rode SOMENTE quando a indexação tiver terminado (evita lock do SQLite).
 """
@@ -13,6 +14,11 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+
+# Garante saída UTF-8 mesmo em terminais Windows (evita UnicodeEncodeError com
+# nomes de arquivo/trechos acentuados sob o code page cp1252).
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 # Lê os parâmetros do config.json para achar o diretório/collection corretos.
 def carregar_config():
@@ -32,6 +38,11 @@ def main() -> int:
     ap.add_argument("--n", type=int, default=5, help="Número de amostras a exibir")
     ap.add_argument("--busca", default=None, help="Faz uma busca semântica por este texto")
     ap.add_argument("--chars", type=int, default=300, help="Máx. de chars por trecho exibido")
+    ap.add_argument(
+        "--fontes",
+        action="store_true",
+        help="Lista quantos chunks foram indexados por arquivo (fonte)",
+    )
     args = ap.parse_args()
 
     persist_dir, collection_name = carregar_config()
@@ -60,6 +71,30 @@ def main() -> int:
 
     if total == 0:
         print("A collection está vazia (indexação ainda não concluída?).")
+        return 0
+
+    if args.fontes:
+        # Só metadados: leve, não carrega o modelo de embeddings.
+        print("\n[FONTES] Chunks indexados por arquivo:\n")
+        dados = col.get(include=["metadatas"])
+        metas = dados.get("metadatas", []) or []
+
+        contagem: dict[str, int] = {}
+        for meta in metas:
+            origem = (meta or {}).get("source", "(sem fonte)")
+            contagem[origem] = contagem.get(origem, 0) + 1
+
+        # Ordena do arquivo com mais chunks para o com menos.
+        ordenado = sorted(contagem.items(), key=lambda kv: kv[1], reverse=True)
+
+        largura = max((len(str(c)) for _, c in ordenado), default=1)
+        for origem, qtd in ordenado:
+            print(f"  {str(qtd).rjust(largura)}  {origem}")
+
+        print(
+            f"\n{len(ordenado)} arquivo(s) distinto(s), "
+            f"{sum(contagem.values())} chunk(s) no total."
+        )
         return 0
 
     if args.busca:

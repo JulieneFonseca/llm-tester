@@ -37,7 +37,7 @@ from llm_tester import utils  # noqa: E402
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="llm-tester — Benchmarking de LLMs (Padrão vs. RAG)"
+        description="llm-tester — Comparação de LLMs (Padrão vs. RAG)"
     )
     parser.add_argument("--config", default="config.json", help="Arquivo de configuração")
     parser.add_argument("--modelo", default=None, help="LLM de execução (override)")
@@ -53,7 +53,7 @@ def main() -> int:
 
     console.print(Panel(
         f"[bold blue]llm-tester[/bold blue]\n"
-        f"Benchmarking de LLMs (Padrão vs. RAG) - {area_tema} / {nome_tema}\n"
+        f"Comparação de LLMs (Padrão vs. RAG) - {area_tema} / {nome_tema}\n"
         f"Modelo de execução: {args.modelo or config.modelos['llm_execucao']}\n"
         f"Modelo juiz: {args.juiz or config.modelos['llm_juiz']}",
         title="llm-tester", border_style="blue",
@@ -103,7 +103,8 @@ def main() -> int:
     tabela.add_row("Fidelidade média", _n(m["nota_fidelidade_media_padrao"]), _n(m["nota_fidelidade_media_rag"]))
     tabela.add_row("Precisão média", _n(m["nota_precisao_media_padrao"]), _n(m["nota_precisao_media_rag"]))
     tabela.add_row("Completude média", _n(m["nota_completude_media_padrao"]), _n(m["nota_completude_media_rag"]))
-    tabela.add_row("Alucinação", _p(m["taxa_alucinacao_padrao_pct"]), _p(m["taxa_alucinacao_rag_pct"]))
+    tabela.add_row("Erros críticos", _p(m["taxa_erros_criticos_padrao_pct"]), _p(m["taxa_erros_criticos_rag_pct"]))
+    tabela.add_row("Sentimento aderente", _p(m["taxa_sentimento_aderente_padrao_pct"]), _p(m["taxa_sentimento_aderente_rag_pct"]))
     console.print(tabela)
     console.print(
         f"[dim]Overhead médio do RAG: {m['overhead_medio_rag_s']:.2f} s "
@@ -121,7 +122,7 @@ def main() -> int:
         ))
 
     console.print(Panel(
-        f"[bold green]Benchmarking concluído![/bold green]\n"
+        f"[bold green]Execução concluída![/bold green]\n"
         f"JSON: {caminho_json}\n"
         f"CSV:  {caminho_csv}",
         title="Finalizado", border_style="green",

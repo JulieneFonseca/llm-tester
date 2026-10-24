@@ -341,11 +341,24 @@ def _editor_dataset(
     st.subheader(titulo)
 
     up = st.file_uploader(
-        f"Carregar {titulo} (.json / .csv)", type=["json", "csv"], key=f"up_{dados_key}"
+        f"Carregar {titulo} (.json / .csv / .xlsx)",
+        type=["json", "csv", "xlsx"], key=f"up_{dados_key}"
     )
     if up is not None:
-        ss[dados_key] = carregar_bytes(up.getvalue(), up.name)
-        st.success(f"{len(ss[dados_key])} item(ns) carregado(s).")
+        try:
+            itens = carregar_bytes(up.getvalue(), up.name)
+        except Exception as exc:  # noqa: BLE001
+            st.error(f"Falha ao ler '{up.name}': {exc}")
+            itens = []
+        if itens:
+            ss[dados_key] = itens
+            st.success(f"{len(itens)} item(ns) carregado(s).")
+        else:
+            st.warning(
+                f"Nenhum item reconhecido em '{up.name}'. Verifique se o JSON tem "
+                f"a chave '{dados_key}' (ou é uma lista), ou se o CSV/XLSX tem "
+                "as colunas esperadas."
+            )
 
     # Carrega o dataset padrão se ainda não houver nada em sessão.
     if not ss.get(dados_key):
@@ -412,8 +425,21 @@ def _extrair_registros(df: "pd.DataFrame", colunas: list[str]) -> list[dict]:
     """Extrai registros válidos de um DataFrame editado, removendo linhas vazias."""
     # Remove a coluna de seleção para exclusão se presente.
     cols_saida = [c for c in df.columns if c != "🗑️"]
+
+    def _vazio(v) -> bool:
+        """True se o valor deve ser descartado. Robusto a listas/arrays."""
+        if isinstance(v, (list, tuple)):
+            return len(v) == 0
+        try:
+            if pd.isna(v):
+                return True
+        except (TypeError, ValueError):
+            # pd.isna sobre tipos não escalares pode falhar: trata como não-vazio.
+            return False
+        return v == ""
+
     registros = [
-        {k: v for k, v in row.items() if k in cols_saida and pd.notna(v) and v != ""}
+        {k: v for k, v in row.items() if k in cols_saida and not _vazio(v)}
         for row in df.to_dict(orient="records")
     ]
     return [r for r in registros if r]
@@ -442,7 +468,9 @@ def _aba_dados_teste():
     _editor_dataset(
         titulo="✅ Gabaritos",
         dados_key="gabarito",
-        colunas=["id", "pergunta", "gabarito_oficial", "acordao", "criterio_fidelidade"],
+        colunas=["id", "pergunta", "resposta_esperada", "ementa_esperada",
+                 "referencias", "criterios_inaceitaveis", "sentimento_esperado",
+                 "julgados_solicitados"],
         carregar_bytes=utils.carregar_gabarito_bytes,
         carregar_arquivo=utils.carregar_gabarito,
         salvar_fn=utils.salvar_gabarito,
@@ -770,16 +798,36 @@ def _painel_avaliacao(
         st.caption(f"{rotulo}: **{nota}/5**", help=ajuda)
         st.progress(min(max(int(nota), 0), 5) / 5)
 
-    # Sinais booleanos.
-    aluc = bool(aval.get("alucinacao_detectada"))
-    fund = bool(aval.get("fundamentacao_correta"))
+    # Sentimento processual identificado e sua aderência ao gabarito.
+    sent = aval.get("sentimento_identificado", "nao_aplicavel")
+    aderente = aval.get("sentimento_aderente_gabarito")
     c1, c2 = st.columns(2)
-    c1.markdown(
-        ("🔴 **Alucinação detectada**" if aluc else "🟢 **Sem alucinação**")
-    )
-    c2.markdown(
-        ("🟢 **Fundamentação correta**" if fund else "🔴 **Fundamentação incorreta**")
-    )
+    c1.markdown(f"🧭 **Sentimento:** {sent}")
+    if aderente is True:
+        c2.markdown("🟢 **Sentimento aderente ao gabarito**")
+    elif aderente is False:
+        c2.markdown("🔴 **Sentimento divergente do gabarito**")
+    else:
+        c2.markdown("⚪ **Sentimento n/a**")
+
+    # Julgados: solicitados x apresentados x verificáveis.
+    solicit = aval.get("julgados_solicitados") or 0
+    apres = aval.get("julgados_apresentados") or 0
+    verif = aval.get("julgados_verificaveis") or 0
+    if solicit or apres:
+        st.caption(
+            f"⚖️ Julgados: {apres}/{solicit} apresentados "
+            f"({verif} verificáveis)"
+        )
+
+    # Erros críticos (violações do campo Inaceitável).
+    erros = aval.get("erros_criticos") or []
+    if isinstance(erros, list) and erros:
+        st.markdown(f"🔴 **{len(erros)} erro(s) crítico(s):**")
+        for e in erros:
+            st.markdown(f"- {e}")
+    else:
+        st.markdown("🟢 **Sem erros críticos**")
 
     # Justificativa do juiz.
     just = aval.get("justificativa_juiz")
@@ -869,8 +917,8 @@ def _aba_dashboard():
     c1.metric("Fidelidade (RAG)", m["nota_fidelidade_media_rag"])
     c2.metric("Precisão vs Gabarito (Padrão)", m["nota_precisao_media_padrao"])
     c2.metric("Precisão vs Gabarito (RAG)", m["nota_precisao_media_rag"])
-    c3.metric("Alucinação % (Padrão)", m["taxa_alucinacao_padrao_pct"])
-    c3.metric("Alucinação % (RAG)", m["taxa_alucinacao_rag_pct"])
+    c3.metric("Erros críticos % (Padrão)", m["taxa_erros_criticos_padrao_pct"])
+    c3.metric("Erros críticos % (RAG)", m["taxa_erros_criticos_rag_pct"])
 
     st.subheader("⏱️ Performance Temporal")
     t1, t2, t3 = st.columns(3)
@@ -932,13 +980,15 @@ def _aba_dashboard():
     st.subheader("🔎 Tabela Detalhada")
     col_f1, col_f2 = st.columns(2)
     with col_f1:
-        so_aluc = st.checkbox("Só casos com alucinação (Padrão)")
+        so_aluc = st.checkbox("Só casos com erro crítico (Padrão)")
     with col_f2:
         so_rag_vence = st.checkbox("Só quando RAG > Padrão (precisão)")
 
     df_view = df.copy()
     if so_aluc:
-        df_view = df_view[df_view["alucinacao_padrao"] == True]  # noqa: E712
+        df_view = df_view[
+            df_view["erros_criticos_padrao"].fillna("").astype(str).str.len() > 0
+        ]
     if so_rag_vence:
         df_view = df_view[df_view["nota_precisao_rag"] > df_view["nota_precisao_padrao"]]
 
@@ -951,7 +1001,12 @@ def _aba_dashboard():
         "nota_fidelidade_padrao", "nota_fidelidade_rag",
         "nota_precisao_padrao", "nota_precisao_rag",
         "nota_completude_padrao", "nota_completude_rag",
-        "alucinacao_padrao", "alucinacao_rag",
+        "sentimento_padrao", "sentimento_rag",
+        "sentimento_aderente_padrao", "sentimento_aderente_rag",
+        "julgados_solicitados",
+        "julgados_apresentados_padrao", "julgados_apresentados_rag",
+        "julgados_verificaveis_padrao", "julgados_verificaveis_rag",
+        "erros_criticos_padrao", "erros_criticos_rag",
         "justificativa_padrao", "justificativa_rag",
         "tempo_retrieval_rag_s", "tempo_geracao_rag_s", "tempo_juiz_s",
     ]
@@ -1102,14 +1157,38 @@ def _secao_reindexacao(cfg: Config, contexto: str = "rag"):
                 f"Indexação de {len(selecao)} arquivo(s) iniciada em segundo plano."
             )
     with col_b2:
+        confirmar_key = f"reindex_tudo_confirmar_{contexto}"
         if st.button("♻️ Reindexar toda a base", use_container_width=True,
                      key=f"reindex_tudo_{contexto}"):
-            _disparar_reindexacao(None)
-            st.session_state["_reindex_disparada"] = True
-            st.warning(
-                "Reindexação TOTAL (todos os arquivos) iniciada em segundo plano "
-                "(pode levar bastante tempo)."
-            )
+            # Não dispara direto: pede confirmação explícita primeiro.
+            st.session_state[confirmar_key] = True
+
+    # Caixa de confirmação para a reindexação TOTAL (ação destrutiva: zera e
+    # recria toda a base vetorial). Só o clique em "Sim" inicia o processo.
+    if st.session_state.get(confirmar_key):
+        st.warning(
+            "⚠️ **Reindexar TODA a base** vai APAGAR a base vetorial atual e "
+            "recriá-la do zero a partir de todos os arquivos da base jurídica. "
+            "Os chunks já indexados serão perdidos e o processo pode levar "
+            "bastante tempo. Deseja mesmo continuar?"
+        )
+        col_sim, col_nao = st.columns(2)
+        with col_sim:
+            if st.button("✅ Sim, reindexar tudo", type="primary",
+                         use_container_width=True,
+                         key=f"reindex_tudo_sim_{contexto}"):
+                st.session_state[confirmar_key] = False
+                _disparar_reindexacao(None)
+                st.session_state["_reindex_disparada"] = True
+                st.warning(
+                    "Reindexação TOTAL (todos os arquivos) iniciada em segundo "
+                    "plano (pode levar bastante tempo)."
+                )
+        with col_nao:
+            if st.button("❌ Não, cancelar", use_container_width=True,
+                         key=f"reindex_tudo_nao_{contexto}"):
+                st.session_state[confirmar_key] = False
+                st.info("Reindexação total cancelada.")
 
     # Progresso (lido do arquivo de log gerado pelo reindexar.py)
     log_path = Path("_reindex_log.txt")

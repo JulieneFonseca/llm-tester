@@ -3,7 +3,7 @@ Módulo de avaliação automatizada (LLM Juiz).
 
 A LLM Juiz recebe a pergunta, o gabarito oficial e as duas respostas
 (Padrão e RAG) e retorna, em JSON estrito, notas de qualidade jurídica,
-detecção de alucinação e justificativas.
+sentimento processual, erros críticos, aferição de julgados e justificativas.
 
 Usa o parâmetro response_format={"type": "json_object"} da Groq API para
 garantir um JSON parseável.
@@ -60,46 +60,142 @@ def _e_request_too_large(exc: Exception) -> bool:
     )
 
 
-SYSTEM_PROMPT_JUIZ_TEMPLATE = """Você é um Juiz avaliador especializado em {especialidade}.
+def _e_json_validate_failed(exc: Exception) -> bool:
+    """
+    Detecta o erro 400 da Groq ('json_validate_failed'): o modo json_object
+    não conseguiu validar a geração como JSON (tipicamente geração vazia porque
+    o modelo gpt-oss gastou o orçamento de tokens no raciocínio interno).
+    """
+    txt = str(exc).lower()
+    return (
+        "json_validate_failed" in txt
+        or "failed to validate json" in txt
+    )
 
-Sua tarefa é avaliar DUAS respostas geradas por sistemas de IA para a MESMA pergunta,
-comparando-as com um GABARITO OFICIAL de referência.
 
-Avalie CADA resposta segundo os critérios (escala 0 a 5):
-- nota_fidelidade: fidelidade às fontes jurídicas / ausência de invenção de conteúdo.
-- nota_precisao_gabarito: quão próxima a resposta está do gabarito oficial.
-- nota_completude: cobertura dos pontos essenciais do gabarito.
-- alucinacao_detectada (booleano): true se a resposta contém informação incorreta
-  ou não suportada (jurisprudência inexistente, dispositivo legal errado, etc.).
-- fundamentacao_correta (booleano): true se cita/fundamenta corretamente
-  (súmula, artigo de lei, acórdão) de forma condizente com o gabarito.
-- justificativa_juiz: explicação objetiva e curta da avaliação. Ao se referir
-  às respostas na justificativa, use SEMPRE os termos "a resposta da LLM Padrão"
-  e "a resposta da LLM com RAG". NUNCA use "resposta A", "resposta B", "A" ou "B".
+SYSTEM_PROMPT_JUIZ_TEMPLATE = """# PAPEL
 
-Escala de notas:
-0 = totalmente incorreto | 1 = majoritariamente incorreto | 2 = parcialmente correto |
-3 = correto nos pontos principais | 4 = correto e completo | 5 = totalmente fiel e preciso.
+Você é um avaliador especializado em {especialidade}. Sua função é avaliar
+comparativamente as respostas produzidas por uma LLM na abordagem Padrão e na
+abordagem com RAG, utilizando EXCLUSIVAMENTE os critérios definidos neste
+instrumento.
 
-Responda EXCLUSIVAMENTE com um objeto JSON válido no formato:
+Para cada questão você recebe:
+- PERGUNTA: enunciado submetido à LLM.
+- RESPOSTA ESPERADA: gabarito jurídico de referência.
+- REFERÊNCIA: legislação, súmulas, julgados e fontes jurídicas indicadas.
+- INACEITÁVEL: erros ou conclusões expressamente vedados.
+- RESPOSTA DA LLM PADRÃO: resposta gerada sem contexto jurídico recuperado.
+- RESPOSTA DA LLM COM RAG: resposta gerada com contexto recuperado da base.
+
+# PRINCÍPIOS DE AVALIAÇÃO
+
+1. Avalie cada resposta individualmente, com a mesma escala e os mesmos critérios.
+2. Não considere uma resposta correta apenas por usar palavras semelhantes às do gabarito.
+3. Considere a conclusão jurídica, os requisitos legais essenciais, a coerência da
+   fundamentação e a aderência às referências fornecidas.
+4. Não invente leis, artigos, súmulas, ementas, números de processos, datas ou
+   entendimentos jurisprudenciais.
+5. Não presuma que uma referência citada pela resposta é verdadeira ou pertinente
+   sem evidência suficiente.
+6. Quando a pergunta exigir quantidade específica de julgados, avalie o atendimento
+   desse requisito e a possibilidade de verificar a autenticidade e a pertinência
+   das decisões.
+7. Não confunda sentimento processual com sentimento emocional. Quando solicitado,
+   o sentimento representa a orientação favorável ou desfavorável à pretensão
+   jurídica, conforme o gabarito.
+8. Não penalize automaticamente diferenças de redação, organização ou terminologia
+   quando o conteúdo jurídico estiver correto.
+9. Se as referências forem insuficientes para confirmar uma afirmação, registre a
+   limitação e não presuma sua veracidade.
+10. Não atribua superioridade à abordagem RAG apenas por citar fontes ou referências.
+
+# CRITÉRIOS (notas independentes de 0 a 5)
+
+- nota_fidelidade: correspondência entre a resposta e os elementos essenciais da
+  RESPOSTA ESPERADA (conclusão e condições jurídicas apresentadas).
+- nota_precisao_gabarito: correção da interpretação jurídica, observância dos
+  requisitos legais relevantes e compatibilidade com as REFERÊNCIAS. Uma conclusão
+  aparentemente correta NÃO recebe nota máxima se o fundamento jurídico for
+  incompatível com as referências.
+- nota_completude: atendimento de TODOS os elementos exigidos pela pergunta e pelo
+  gabarito (requisitos, explicações, QUANTIDADE de julgados solicitada e
+  classificação do sentimento processual, quando aplicáveis).
+
+Escala comum:
+0 = ausente, integralmente incorreto ou incompatível com o requisito avaliado.
+1 = atendimento mínimo, com erros graves.
+2 = atendimento parcial, com lacunas ou incorreções relevantes.
+3 = atendimento satisfatório, mas com limitações identificáveis.
+4 = atendimento consistente, com pequenas omissões ou imprecisões.
+5 = atendimento integral e consistente com os critérios estabelecidos.
+A nota reflete o critério avaliado, não uma impressão geral da resposta.
+
+# ERROS CRÍTICOS
+
+Compare a resposta com o campo INACEITÁVEL. Ao identificar uma violação, descreva
+objetivamente o trecho ou conteúdo problemático e sua incompatibilidade com o
+gabarito, registrando cada ocorrência em "erros_criticos". Erros críticos devem
+refletir-se nas notas de precisão, fidelidade ou completude, conforme a natureza
+do erro. Uma boa nota em outros critérios NÃO compensa um erro jurídico crítico.
+
+# SENTIMENTO PROCESSUAL
+
+Quando a pergunta solicitar o sentimento ligado à probabilidade de sucesso/derrota,
+classifique em:
+- positivo: orientação favorável à pretensão da parte autora.
+- negativo: orientação desfavorável à pretensão da parte autora.
+- neutro ou inconclusivo: sem elementos suficientes para classificação fundamentada.
+- nao_aplicavel: a pergunta não solicita sentimento.
+Não interprete essas categorias como probabilidades estatísticas reais de vitória.
+Verifique se a classificação da resposta corresponde à orientação do gabarito.
+
+# RASTREABILIDADE DE JULGADOS
+
+Distinga afirmações sustentadas pelas referências de afirmações não verificáveis.
+NÃO declare que julgados foram verificados sem evidências suficientes para confirmar
+sua autenticidade.
+
+# REFERÊNCIA ÀS RESPOSTAS
+
+Na justificativa, use SEMPRE "a resposta da LLM Padrão" e "a resposta da LLM com
+RAG". NUNCA use "resposta A", "resposta B", "A" ou "B".
+
+# FORMATO DE SAÍDA
+
+Responda EXCLUSIVAMENTE com um objeto JSON válido, sem Markdown nem comentários,
+no formato (os mesmos campos para cada abordagem):
 {
   "avaliacao_llm_padrao": {
     "nota_fidelidade": <0-5>,
     "nota_precisao_gabarito": <0-5>,
     "nota_completude": <0-5>,
-    "alucinacao_detectada": <true|false>,
-    "fundamentacao_correta": <true|false>,
-    "justificativa_juiz": "<texto>"
+    "sentimento_identificado": "<positivo|negativo|neutro|inconclusivo|nao_aplicavel>",
+    "sentimento_aderente_gabarito": <true|false|null>,
+    "erros_criticos": ["<descrição objetiva>", "..."],
+    "julgados_solicitados": <inteiro>,
+    "julgados_apresentados": <inteiro>,
+    "julgados_verificaveis": <inteiro>,
+    "justificativa_juiz": "<texto conciso>"
   },
   "avaliacao_llm_rag": {
     "nota_fidelidade": <0-5>,
     "nota_precisao_gabarito": <0-5>,
     "nota_completude": <0-5>,
-    "alucinacao_detectada": <true|false>,
-    "fundamentacao_correta": <true|false>,
-    "justificativa_juiz": "<texto>"
+    "sentimento_identificado": "<positivo|negativo|neutro|inconclusivo|nao_aplicavel>",
+    "sentimento_aderente_gabarito": <true|false|null>,
+    "erros_criticos": ["<descrição objetiva>", "..."],
+    "julgados_solicitados": <inteiro>,
+    "julgados_apresentados": <inteiro>,
+    "julgados_verificaveis": <inteiro>,
+    "justificativa_juiz": "<texto conciso>"
   }
 }
+
+Se não houver erros críticos, use lista vazia. Use "julgados_verificaveis" apenas
+para decisões cuja autenticidade e pertinência puderem ser confirmadas pelas
+evidências disponíveis; na dúvida, use 0. A avaliação deve basear-se SOMENTE nos
+dados fornecidos, sem criar resultados, referências ou fatos jurídicos inexistentes.
 """
 
 
@@ -108,8 +204,12 @@ def _avaliacao_vazia(justificativa: str) -> dict[str, Any]:
         "nota_fidelidade": 0,
         "nota_precisao_gabarito": 0,
         "nota_completude": 0,
-        "alucinacao_detectada": True,
-        "fundamentacao_correta": False,
+        "sentimento_identificado": "inconclusivo",
+        "sentimento_aderente_gabarito": None,
+        "erros_criticos": [justificativa],
+        "julgados_solicitados": 0,
+        "julgados_apresentados": 0,
+        "julgados_verificaveis": 0,
         "justificativa_juiz": justificativa,
     }
 
@@ -138,17 +238,52 @@ class Judge:
         if self._llm is None:
             from langchain_groq import ChatGroq
 
+            # response_format força a saída a ser um objeto JSON.
+            model_kwargs: dict[str, Any] = {
+                "response_format": {"type": "json_object"}
+            }
+            # reasoning_effort reduz os tokens gastos no raciocínio interno dos
+            # modelos gpt-oss. Sem isso, o modelo pode consumir todo o orçamento
+            # de max_tokens no raciocínio e não sobrar espaço para emitir o JSON,
+            # resultando em geração vazia e erro 400 (json_validate_failed).
+            reasoning_effort = self.params.get("reasoning_effort")
+            if reasoning_effort:
+                model_kwargs["extra_body"] = {"reasoning_effort": reasoning_effort}
+
             self._llm = ChatGroq(
                 model=self.modelo,
                 temperature=0.0,
                 api_key=self.config.groq_api_key,
                 max_retries=0,
-                # O Juiz devolve só um JSON com duas avaliações curtas — um teto
-                # baixo de saída economiza o orçamento de tokens por minuto (TPM).
-                max_tokens=self.params.get("max_tokens_juiz", 1200),
-                model_kwargs={"response_format": {"type": "json_object"}},
+                # Teto de saída: precisa acomodar o raciocínio interno dos modelos
+                # gpt-oss MAIS o JSON com as duas avaliações. Um teto muito baixo
+                # trunca o JSON e dispara erro 400 na Groq.
+                max_tokens=self.params.get("max_tokens_juiz", 2000),
+                model_kwargs=model_kwargs,
             )
         return self._llm
+
+    def _get_llm_json_livre(self):
+        """
+        LLM do Juiz SEM response_format (json_object), usado como fallback quando
+        a Groq rejeita o modo JSON estrito (erro 400 json_validate_failed). O JSON
+        é extraído da saída em texto pelo parser tolerante _parse_json.
+        """
+        from langchain_groq import ChatGroq
+
+        model_kwargs: dict[str, Any] = {}
+        reasoning_effort = self.params.get("reasoning_effort")
+        if reasoning_effort:
+            model_kwargs["extra_body"] = {"reasoning_effort": reasoning_effort}
+
+        return ChatGroq(
+            model=self.modelo,
+            temperature=0.0,
+            api_key=self.config.groq_api_key,
+            max_retries=0,
+            max_tokens=self.params.get("max_tokens_juiz", 2000),
+            model_kwargs=model_kwargs,
+        )
 
     def avaliar(
         self,
@@ -259,6 +394,32 @@ class Judge:
                     max_delay_s=self.rate.get("max_delay_s", 60.0),
                     on_wait=on_wait,
                 )
+            elif _e_json_validate_failed(exc):
+                # A Groq rejeitou o modo JSON estrito (geração vazia). Refaz a
+                # chamada SEM response_format e extrai o JSON do texto gerado,
+                # com instrução explícita para responder só com o objeto JSON.
+                llm_livre = self._get_llm_json_livre()
+                reforco = (
+                    user_msg
+                    + "\n\nIMPORTANTE: responda EXCLUSIVAMENTE com o objeto JSON "
+                    "no formato especificado, sem nenhum texto antes ou depois."
+                )
+
+                def chamada_livre():
+                    inicio = time.perf_counter()
+                    resp = llm_livre.invoke([
+                        SystemMessage(content=self.system_prompt),
+                        HumanMessage(content=reforco),
+                    ])
+                    return resp.content, time.perf_counter() - inicio
+
+                content, tempo = com_backoff(
+                    chamada_livre,
+                    max_retries=self.rate.get("max_retries", 6),
+                    base_delay_s=self.rate.get("base_delay_s", 2.0),
+                    max_delay_s=self.rate.get("max_delay_s", 60.0),
+                    on_wait=on_wait,
+                )
             else:
                 raise
 
@@ -304,16 +465,21 @@ class Judge:
         for r in resultados:
             av_p = r.get("avaliacao_llm_padrao", {})
             av_r = r.get("avaliacao_llm_rag", {})
+
+            def _n_erros(av: dict) -> int:
+                erros = av.get("erros_criticos") or []
+                return len(erros) if isinstance(erros, list) else 0
+
             linhas_casos.append(
                 f"- Pergunta {r.get('id_pergunta')}: "
                 f"Padrão [fid={av_p.get('nota_fidelidade')}, "
                 f"prec={av_p.get('nota_precisao_gabarito')}, "
                 f"compl={av_p.get('nota_completude')}, "
-                f"alucinação={'sim' if av_p.get('alucinacao_detectada') else 'não'}] | "
+                f"erros_críticos={_n_erros(av_p)}] | "
                 f"RAG [fid={av_r.get('nota_fidelidade')}, "
                 f"prec={av_r.get('nota_precisao_gabarito')}, "
                 f"compl={av_r.get('nota_completude')}, "
-                f"alucinação={'sim' if av_r.get('alucinacao_detectada') else 'não'}]"
+                f"erros_críticos={_n_erros(av_r)}]"
             )
         resumo_casos = "\n".join(linhas_casos)
 
@@ -321,7 +487,7 @@ class Judge:
 - Fidelidade: Padrão={metricas.get('nota_fidelidade_media_padrao')} | RAG={metricas.get('nota_fidelidade_media_rag')}
 - Precisão vs. gabarito: Padrão={metricas.get('nota_precisao_media_padrao')} | RAG={metricas.get('nota_precisao_media_rag')}
 - Completude: Padrão={metricas.get('nota_completude_media_padrao')} | RAG={metricas.get('nota_completude_media_rag')}
-- Taxa de alucinação: Padrão={metricas.get('taxa_alucinacao_padrao_pct')}% | RAG={metricas.get('taxa_alucinacao_rag_pct')}%
+- Taxa de erros críticos: Padrão={metricas.get('taxa_erros_criticos_padrao_pct')}% | RAG={metricas.get('taxa_erros_criticos_rag_pct')}%
 - Tempo médio: Padrão={metricas.get('tempo_medio_llm_padrao_s')}s | RAG={metricas.get('tempo_medio_llm_rag_s')}s
 - Overhead do RAG: {metricas.get('overhead_medio_rag_s')}s ({metricas.get('overhead_medio_rag_pct')}%)"""
 
@@ -347,10 +513,11 @@ O parecer deve conter, em texto corrido (3 a 5 parágrafos):
 3. A questão central: o ganho de qualidade do RAG justifica o overhead de latência?
 4. Uma recomendação prática de qual abordagem usar neste domínio.
 
-Comece a resposta com uma linha exatamente no formato:
-VENCEDORA: <RAG|Padrão|Empate>
+Comece a resposta com UMA linha contendo apenas a palavra "VENCEDORA:" seguida
+de exatamente uma destas opções (sem colchetes, sem outros caracteres): RAG, Padrão
+ou Empate. Exemplos válidos de primeira linha: "VENCEDORA: RAG" ou "VENCEDORA: Padrão".
 
-Em seguida, o texto do parecer."""
+Em seguida, em nova linha, escreva o texto do parecer."""
 
         llm = self._get_llm_texto()
 
@@ -371,19 +538,107 @@ Em seguida, o texto do parecer."""
             on_wait=on_wait,
         )
 
-        # Extrai a abordagem vencedora da primeira linha "VENCEDORA: ..."
-        abordagem = "Indefinido"
         texto = (content or "").strip()
-        for linha in texto.splitlines():
+
+        # Fallback: decide a vencedora pelas métricas (precisão; desempata por
+        # fidelidade e completude). Usado quando o modelo não devolve um valor
+        # válido na linha "VENCEDORA:".
+        def _vencedora_por_metricas() -> str:
+            def _soma(suf: str) -> float:
+                return (
+                    (metricas.get(f"nota_precisao_media_{suf}") or 0)
+                    + (metricas.get(f"nota_fidelidade_media_{suf}") or 0)
+                    + (metricas.get(f"nota_completude_media_{suf}") or 0)
+                )
+            s_padrao, s_rag = _soma("padrao"), _soma("rag")
+            if abs(s_rag - s_padrao) < 1e-9:
+                return "Empate"
+            return "RAG" if s_rag > s_padrao else "Padrão"
+
+        def _canonizar(valor: str) -> str | None:
+            """Mapeia o texto bruto para RAG | Padrão | Empate, ou None."""
+            v = (valor or "").strip().strip(".<>[]()").lower()
+            if v in ("rag", "llm rag", "llm com rag", "com rag"):
+                return "RAG"
+            if v in ("padrão", "padrao", "llm padrão", "llm padrao"):
+                return "Padrão"
+            if v in ("empate", "empatado", "equivalente"):
+                return "Empate"
+            return None
+
+        # Extrai a abordagem vencedora da primeira linha "VENCEDORA: ..."
+        abordagem: str | None = None
+        linhas = texto.splitlines()
+        linhas_parecer = linhas
+        for i, linha in enumerate(linhas):
             if linha.strip().upper().startswith("VENCEDORA:"):
-                valor = linha.split(":", 1)[1].strip()
-                abordagem = valor or "Indefinido"
+                abordagem = _canonizar(linha.split(":", 1)[1])
+                # Remove a linha de metadado do texto exibido do parecer.
+                linhas_parecer = linhas[:i] + linhas[i + 1:]
                 break
+
+        if abordagem is None:
+            abordagem = _vencedora_por_metricas()
+
+        parecer_texto = "\n".join(linhas_parecer).strip()
 
         return {
             "abordagem_vencedora": abordagem,
-            "parecer_texto": texto,
+            "parecer_texto": parecer_texto,
             "tempo_parecer_juiz_s": round(tempo, 4),
+        }
+
+    @staticmethod
+    def _normalizar_avaliacao(av: Any) -> dict[str, Any]:
+        """
+        Garante que uma avaliação individual tenha todos os campos do contrato,
+        com tipos corretos, mesmo que o modelo omita ou troque o tipo de algum.
+        """
+        if not isinstance(av, dict):
+            return _avaliacao_vazia("Avaliação ausente ou em formato inválido.")
+
+        def _nota(valor: Any) -> int:
+            try:
+                return max(0, min(5, int(round(float(valor)))))
+            except (TypeError, ValueError):
+                return 0
+
+        def _inteiro(valor: Any) -> int:
+            try:
+                return max(0, int(round(float(valor))))
+            except (TypeError, ValueError):
+                return 0
+
+        # erros_criticos: aceita lista, string única ou ausência.
+        erros = av.get("erros_criticos", [])
+        if isinstance(erros, str):
+            erros = [erros] if erros.strip() else []
+        elif isinstance(erros, list):
+            erros = [str(e) for e in erros if str(e).strip()]
+        else:
+            erros = []
+
+        sentimento = str(av.get("sentimento_identificado", "inconclusivo") or
+                         "inconclusivo").strip().lower()
+        if sentimento not in {"positivo", "negativo", "neutro",
+                              "inconclusivo", "nao_aplicavel"}:
+            sentimento = "inconclusivo"
+
+        aderente = av.get("sentimento_aderente_gabarito", None)
+        if not isinstance(aderente, bool):
+            aderente = None
+
+        return {
+            "nota_fidelidade": _nota(av.get("nota_fidelidade")),
+            "nota_precisao_gabarito": _nota(av.get("nota_precisao_gabarito")),
+            "nota_completude": _nota(av.get("nota_completude")),
+            "sentimento_identificado": sentimento,
+            "sentimento_aderente_gabarito": aderente,
+            "erros_criticos": erros,
+            "julgados_solicitados": _inteiro(av.get("julgados_solicitados")),
+            "julgados_apresentados": _inteiro(av.get("julgados_apresentados")),
+            "julgados_verificaveis": _inteiro(av.get("julgados_verificaveis")),
+            "justificativa_juiz": str(av.get("justificativa_juiz", "") or ""),
         }
 
     @staticmethod
@@ -398,12 +653,24 @@ Em seguida, o texto do parecer."""
             except json.JSONDecodeError:
                 data = {}
 
+        if not isinstance(data, dict):
+            data = {}
+
         if "avaliacao_llm_padrao" not in data:
             data["avaliacao_llm_padrao"] = _avaliacao_vazia(
                 "Falha ao parsear avaliação do juiz."
             )
+        else:
+            data["avaliacao_llm_padrao"] = Judge._normalizar_avaliacao(
+                data["avaliacao_llm_padrao"]
+            )
+
         if "avaliacao_llm_rag" not in data:
             data["avaliacao_llm_rag"] = _avaliacao_vazia(
                 "Falha ao parsear avaliação do juiz."
+            )
+        else:
+            data["avaliacao_llm_rag"] = Judge._normalizar_avaliacao(
+                data["avaliacao_llm_rag"]
             )
         return data
