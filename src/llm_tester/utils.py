@@ -148,6 +148,32 @@ def carregar_gabarito(caminho: str | Path) -> list[dict]:
         return _normalizar_gabarito(json.load(f))
 
 
+def perguntas_do_gabarito(gabarito: list[dict]) -> list[dict]:
+    """
+    Deriva a lista de perguntas a partir do gabarito (fonte ÚNICA).
+
+    Cada item do gabarito já contém o `id` e o texto da `pergunta`; esta função
+    extrai esses campos (mais `categoria`, quando presente) no formato esperado
+    pelo restante do pipeline. Evita manter um dataset de perguntas separado e
+    sujeito a dessincronização com o gabarito.
+    """
+    perguntas: list[dict] = []
+    for item in gabarito:
+        if not isinstance(item, dict):
+            continue
+        pergunta = (item.get("pergunta") or "").strip()
+        if not pergunta:
+            continue
+        reg = {
+            "id": item.get("id", item.get("id_pergunta", "")),
+            "pergunta": pergunta,
+        }
+        if item.get("categoria"):
+            reg["categoria"] = item["categoria"]
+        perguntas.append(reg)
+    return perguntas
+
+
 def _salvar_dataset(
     caminho: str | Path, chave_lista: str, itens: list[dict]
 ) -> None:

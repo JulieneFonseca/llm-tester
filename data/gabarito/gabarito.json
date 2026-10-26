@@ -26,17 +26,18 @@
         "Lei 9.528/1997",
         "Súmula 416 STJ"
       ],
-      "pontos_obrigatorios": [
-        "Aceitar que as provas de união estável e dependência econômica exigem início de prova material contemporânea dos fatos",
-        "As provas deverão ser produzidas em período não superior a 24 meses (últimos 2 anos) da data do óbito",
-        "Não será admitida prova exclusivamente testemunhal para reconhecer a união estável, exceto na ocorrência de motivo de força maior ou caso fortuito,"
-      ],
       "criterios_inaceitaveis": [
         "Não reconhecer a união estável, mesmo diante de provas materiais e testemunhais",
         "Não trazer, pelo menos, 3 decisões com número do acórdão e ementa"
       ],
       "sentimento_esperado": "positivo",
-      "julgados_solicitados": 3
+      "julgados_solicitados": 3,
+      "pontos_obrigatorios": [
+        "Aceitar que as provas de união estável e dependência econômica exigem início de prova material contemporânea dos fatos",
+        "As provas deverão ser produzidas em período não superior a 24 meses (últimos 2 anos) da data do óbito",
+        "Não será admitida prova exclusivamente testemunhal para reconhecer a união estável, exceto na ocorrência de motivo de força maior ou caso fortuito,"
+      ],
+      "gabarito_oficial": "O direito à pensão por morte é devido ao companheiro(a) que comprovar a união estável mediante indício razoável de prova material corroborado por prova testemunhal consistente. O sentimento esperado sobre o pedido em eventual ação judicial é positivo, indicando probabilidade de sucesso."
     },
     {
       "id": "Q02",
@@ -54,14 +55,14 @@
         "IN 77/2015, Art. 121, § 2º",
         "Lei 13.846/2019"
       ],
-      "pontos_obrigatorios": [],
       "criterios_inaceitaveis": [
         "Exigir prova documental exaustiva de dependência econômico-financeira para dependentes de 1ª classe (cônjuge/companheiro)",
         "Não reconhecer a união estável",
         "Não trazer, pelo menos, 3 decisões com número do acórdão e ementa"
       ],
       "sentimento_esperado": "positivo",
-      "julgados_solicitados": 3
+      "julgados_solicitados": 3,
+      "gabarito_oficial": "A comprovação da união estável confere ao companheiro a condição de dependente de primeira classe, cuja dependência econômica é presumida por lei. O sentimento em eventual ação judicial é positivo."
     },
     {
       "id": "Q03",
@@ -78,13 +79,13 @@
         "IN 77/2015, Art. 126",
         "Lei 10.406/2002; Código Civil 2002, Art. 198, I"
       ],
-      "pontos_obrigatorios": [],
       "criterios_inaceitaveis": [
         "Não conceder o benefício a filho inválido em virtude de decadência ou prescrição",
         "Não trazer, pelo menos, 3 decisões com número do acórdão e ementa"
       ],
       "sentimento_esperado": "positivo",
-      "julgados_solicitados": 3
+      "julgados_solicitados": 3,
+      "gabarito_oficial": "A invalidez do filho garante o direito à pensão por morte independentemente da idade. Contra o absolutamente incapaz não corre prescrição; O sentimento esperado é positivo."
     },
     {
       "id": "Q04",
@@ -96,13 +97,13 @@
         "EC nº 103/2019, Art. 24",
         "CF/1998. Art. 201, § 15"
       ],
-      "pontos_obrigatorios": [],
       "criterios_inaceitaveis": [
         "Afirmar ser possível receber integralmente duas pensões por morte de cônjuges/companheiros no mesmo regime previdenciário",
         "Não trazer, pelo menos, 3 decisões com número do acórdão e ementa"
       ],
       "sentimento_esperado": "negativo",
-      "julgados_solicitados": 3
+      "julgados_solicitados": 3,
+      "gabarito_oficial": "É vedada a cumulação de mais de uma pensão por morte deixada por cônjuge ou companheiro no mesmo regime previdenciário. É assegurado, porém, o direito de opção pelo benefício mais vantajoso. O sentimento é negativo quanto ao pedido de cumulação irrestrita de duas pensões de cônjuges."
     },
     {
       "id": "Q05",
@@ -115,13 +116,13 @@
         "CF/1998. Art. 201, § 15",
         "Decreto nº 10.410/2020, Art. 167-A"
       ],
-      "pontos_obrigatorios": [],
       "criterios_inaceitaveis": [
         "Sustentar a impossibilidade de cumular pensão de esposo com pensão de filho",
         "Não trazer, pelo menos, 3 decisões com número do acórdão e ementa"
       ],
       "sentimento_esperado": "positivo",
-      "julgados_solicitados": 3
+      "julgados_solicitados": 3,
+      "gabarito_oficial": "A legislação previdenciária não proíbe a cumulação de pensão por morte decorrente do óbito do cônjuge com a pensão por morte decorrente do óbito de filho, pois derivam de fatos geradores e geradores de dependência distintos. O sentimento é positivo."
     },
     {
       "id": "Q06",
@@ -135,7 +136,6 @@
         "Lei 10.406/2002; Código Civil 2002, Art. 1.521",
         "Constituição Federal CF/1988, Art. 226, § 3º"
       ],
-      "pontos_obrigatorios": [],
       "criterios_inaceitaveis": [
         "Indicar possibilidade e cumulação das pensões para uniões estáveis concomitantes",
         "Trazer sentimento positivo para o caso",
@@ -143,7 +143,8 @@
         "Não trazer, pelo menos, 3 decisões com número do acórdão e ementa"
       ],
       "sentimento_esperado": "negativo",
-      "julgados_solicitados": 3
+      "julgados_solicitados": 3,
+      "gabarito_oficial": "O STF fixou tese contrária ao rateio em caso de concubinato; Pela tese de repercussão Geral o STF negou a possibilidade de cumulação de união estáveis. A preexistência de casamento ou de união estável de um dos conviventes, ressalvada a exceção do artigo 1.723, § 1º, do Código Civil, impede o reconhecimento de novo vínculo referente ao mesmo período, inclusive para fins previdenciários, em virtude da consagração do dever de fidelidade e da monogamia pelo ordenamento jurídico-constitucional brasileiro; O sentimento configurado nesta amostragem é negativo para acolhimento jurisprudencial específico em ações de rateio."
     },
     {
       "id": "Q07",
@@ -159,7 +160,6 @@
         "Lei 10.406/2002; Código Civil 2002, Art. 1.521",
         "Constituição Federal CF/1988, Art. 226, § 3º"
       ],
-      "pontos_obrigatorios": [],
       "criterios_inaceitaveis": [
         "Garantir direito ao benefício previdenciário para relações casuais/esporádicas sem Affectio Maritalis e sem início de prova material válida",
         "Indicar possibilidade e cumulação das pensões para uniões estáveis concomitantes",
@@ -168,7 +168,8 @@
         "Não trazer, pelo menos, 3 decisões com número do acórdão e ementa"
       ],
       "sentimento_esperado": "negativo",
-      "julgados_solicitados": 3
+      "julgados_solicitados": 3,
+      "gabarito_oficial": "Relações de afeto esporádicas ou namoros casuais não caracterizam união estável (que exige convivência pública, contínua e duradoura com o objetivo de constituição de família). O sentimento é negativo."
     },
     {
       "id": "Q08",
@@ -183,13 +184,13 @@
         "IN INSS 128/2022, Art. 374",
         "IN INSS 77/2015, Art. 372"
       ],
-      "pontos_obrigatorios": [],
       "criterios_inaceitaveis": [
         "Dar prevalência ao vínculo matrimonial formal em detrimento da separação de fato comprovada e da união estável estabelecida.",
         "Não trazer, pelo menos, 3 decisões com número do acórdão e ementa"
       ],
       "sentimento_esperado": "positivo",
-      "julgados_solicitados": 3
+      "julgados_solicitados": 3,
+      "gabarito_oficial": "A separação de fato afasta a presunção de dependência da ex-esposa (salvo se recebia pensão alimentar). Comprovada a união estável até o óbito, o benefício é devido à companheira. O sentimento é positivo."
     },
     {
       "id": "Q09",
@@ -204,13 +205,13 @@
         "IN INSS 128/2022, Art. 377",
         "IN INSS 77/2015, Art. 379"
       ],
-      "pontos_obrigatorios": [],
       "criterios_inaceitaveis": [
         "Exigir certidão de óbito tradicional ou sentença final transitada em julgado quando comprovado desaparecimento em catástrofe/desastre.",
         "Não trazer, pelo menos, 3 decisões com número do acórdão e ementa"
       ],
       "sentimento_esperado": "positivo",
-      "julgados_solicitados": 3
+      "julgados_solicitados": 3,
+      "gabarito_oficial": "Em casos de desastre, acidente ou catástrofe, a pensão provisória por morte presumida independe da declaração prévia de ausência e do prazo de 6 meses (Art. 78, § 1º, da Lei 8.213/91). O sentimento esperado é positivo."
     },
     {
       "id": "Q10",
@@ -225,29 +226,28 @@
         "IN INSS 128/2022, Art. 377",
         "IN INSS 77/2015, Art. 379"
       ],
-      "pontos_obrigatorios": [],
       "criterios_inaceitaveis": [
         "Afirmar que acidente automobilístico sem corpo não permite aplicação do § 1º do art. 78 da Lei 8.213/91",
         "Usar previsão do art. 74, III, da Lei nº 8.213/91",
         "Não trazer, pelo menos, 3 decisões com número do acórdão e ementa"
       ],
       "sentimento_esperado": "positivo",
-      "julgados_solicitados": 3
+      "julgados_solicitados": 3,
+      "gabarito_oficial": "Havendo prova do desaparecimento em decorrência de acidente grave (carro destruído), aplica-se a dispensa de declaração judicial prévia para a pensão provisória (art. 78, § 1º da Lei 8.213/91). O sentimento é positivo."
     },
     {
       "id": "Q11",
       "pergunta": "Entrei com pedido de pensão por morte no INSS. Meu pai saiu de casa há 2 meses. Ele viajou de carro para outro estado. Ele não deu notícias e estamos preocupados. Não encontramos vestígios de acidente, tragédia, desastres, ou algo similar. Mas amamos nosso pai e precisamos urgente de dinheiro para manter os alimentos de nossa casa. Estamos passando necessidade, com fome, sede e com muitas dívidas em aberto para pagar. Ele é contribuinte, onde comprovei a qualidade de segurado do INSS. INSS negou a mim o pedido de pensão por morte. A autarquia considerou que não há sentença de morte presumida; porém já ingressei no judiciário com pedido liminar, que foi negada, considero que o judiciário está extremamente moroso com o processo. Informe meus direitos sobre o tema. Traga 3 decisões julgados pelo tribunal para que eu possa incorporar na minha petição para o TRF. Ainda informe o sentimento relacionado a estas decisões, sendo negativo para probabilidade de derrota e positivo em probabilidade de sucesso em uma eventual ação judicial.",
       "resposta_esperada": "Sem indícios de acidente ou catástrofe, exige-se a declaração judicial de ausência/morte presumida após o prazo legal mínimo de 6 meses (art. 78, caput, da Lei 8.213/91). Com apenas 2 meses e sem provas de tragédia, o benefício não pode ser concedido de imediato. (Nota do arquivo de origem: O sentimento foi indicado como positivo na tabela do Stage 2 para fins do estudo do modelo, porém os requisitos legais exigem o decurso do prazo/sentença).",
-      "ementa_esperada": "",
       "referencias": [
         "Lei nº 8.213/1991, art. 78, caput; Código Civil, art. 22."
       ],
-      "pontos_obrigatorios": [],
       "criterios_inaceitaveis": [
         "Afirmar que a mera necessidade financeira ou o sumiço de apenas 2 meses sem acidente autoriza a pensão imediata sem sentença judicial."
       ],
       "sentimento_esperado": "positivo",
-      "julgados_solicitados": 3
+      "julgados_solicitados": 3,
+      "gabarito_oficial": "Sem indícios de acidente ou catástrofe, exige-se a declaração judicial de ausência/morte presumida após o prazo legal mínimo de 6 meses (art. 78, caput, da Lei 8.213/91). Com apenas 2 meses e sem provas de tragédia, o benefício não pode ser concedido de imediato. (Nota do arquivo de origem: O sentimento foi indicado como positivo na tabela do Stage 2 para fins do estudo do modelo, porém os requisitos legais exigem o decurso do prazo/sentença)."
     },
     {
       "id": "Q12",
@@ -257,12 +257,12 @@
       "referencias": [
         "Lei nº 8.213/1991, art. 78, caput; Código Civil, art. 6º e art. 22."
       ],
-      "pontos_obrigatorios": [],
       "criterios_inaceitaveis": [
         "Concluir pela obrigatoriedade de concessão administrativa do INSS sem qualquer provocação ou decisão judicial de ausência."
       ],
       "sentimento_esperado": "inconclusivo",
-      "julgados_solicitados": 3
+      "julgados_solicitados": 3,
+      "gabarito_oficial": "Inexistindo acidente/catástrofe, a concessão da pensão por morte depende expressamente da sentença declaratória de ausência/morte presumida emitida pela autoridade judicial competente. O sentimento é de que não há entendimento pacífico sem a sentença prévia."
     },
     {
       "id": "Q13",
@@ -272,12 +272,12 @@
       "referencias": [
         "Código Civil, art. 2º; Lei nº 8.213/1991, art. 74, I e art. 103, parágrafo único."
       ],
-      "pontos_obrigatorios": [],
       "criterios_inaceitaveis": [
         "Negar os efeitos retroativos do benefício à data do óbito do pai sob o pretexto de falta de personalidade jurídica ao tempo do falecimento."
       ],
       "sentimento_esperado": "positivo",
-      "julgados_solicitados": 3
+      "julgados_solicitados": 3,
+      "gabarito_oficial": "O filho nascido póstumo tem direito ao recebimento das parcelas do benefício de pensão por morte desde a data do óbito do genitor (instituidor), haja vista que os direitos do nascituro são salvaguardados pela lei e contra o menor não corre prescrição. O sentimento é positivo."
     },
     {
       "id": "Q14",
@@ -287,12 +287,12 @@
       "referencias": [
         "Lei nº 8.213/1991, art. 57, art. 103; Súmula 85/STJ."
       ],
-      "pontos_obrigatorios": [],
       "criterios_inaceitaveis": [
         "Alegação de prescrição quinquenal total quando o requerimento foi formulado antes de transcorridos 5 anos do óbito/concessão."
       ],
       "sentimento_esperado": "positivo",
-      "julgados_solicitados": 3
+      "julgados_solicitados": 3,
+      "gabarito_oficial": "O dependente tem legitimidade para pleitear a conversão do tempo especial exercido pelo falecido para revisar a RMI da aposentadoria/pensão. Dentro do prazo de 5 anos não há prescrição quinquenal das parcelas. O sentimento é positivo."
     },
     {
       "id": "Q15",
@@ -302,12 +302,12 @@
       "referencias": [
         "Lei nº 8.213/1991, art. 57 e art. 58."
       ],
-      "pontos_obrigatorios": [],
       "criterios_inaceitaveis": [
         "Conceder acréscimo de tempo especial por percepção subjetiva de \"trabalho pesado\" sem laudo técnico pericial ou PPP."
       ],
       "sentimento_esperado": "negativo",
-      "julgados_solicitados": 3
+      "julgados_solicitados": 3,
+      "gabarito_oficial": "A mera alegação de trabalho desgastante ou sobrecarga na função de assistente administrativo não caracteriza atividade especial/insalubre sem a demonstração de exposição a agentes nocivos (PPP/LTCAT). O sentimento é negativo."
     },
     {
       "id": "Q16",
@@ -317,12 +317,12 @@
       "referencias": [
         "CF/88, art. 37, § 5º; STF - RE 636886 (Tema 899)."
       ],
-      "pontos_obrigatorios": [],
       "criterios_inaceitaveis": [
         "Sustentar a imprescritibilidade genérica de cobrança de título de Tribunal de Contas em desacordo com o Tema 899 do STF."
       ],
       "sentimento_esperado": "negativo",
-      "julgados_solicitados": 3
+      "julgados_solicitados": 3,
+      "gabarito_oficial": "Segundo a tese do STF no Tema 899 de Repercussão Geral, é prescritível a pretensão de ressarcimento ao erário fundada em decisão de Tribunal de Contas. O sentimento para a pretensão do advogado público é negativo."
     },
     {
       "id": "Q17",
@@ -332,12 +332,12 @@
       "referencias": [
         "Lei nº 8.213/1991, art. 103; Tema 966/STJ."
       ],
-      "pontos_obrigatorios": [],
       "criterios_inaceitaveis": [
         "Defender a inaplicabilidade do prazo decadencial decenal sobre a aposentadoria originária quando decorridos mais de 10 anos da concessão inicial."
       ],
       "sentimento_esperado": "negativo",
-      "julgados_solicitados": 3
+      "julgados_solicitados": 3,
+      "gabarito_oficial": "O prazo decadencial de 10 anos para revisão do ato de concessão da aposentadoria original (concedida em 2000) extingue o direito do segurado e, por consequência, o do pensionista de refletir a revisão na pensão por morte. O sentimento é negativo."
     },
     {
       "id": "Q18",
@@ -348,12 +348,12 @@
         "Lei nº 8.213/1991, art. 74, § 2º.",
         "Lei 13.135/2015"
       ],
-      "pontos_obrigatorios": [],
       "criterios_inaceitaveis": [
         "Validar a cassação definitiva de benefício por fraude matrimonial fundada estritamente em processo administrativo sem o devido processo judicial legalmente exigido."
       ],
       "sentimento_esperado": "positivo",
-      "julgados_solicitados": 3
+      "julgados_solicitados": 3,
+      "gabarito_oficial": "A perda da pensão por simulação ou fraude no casamento/união estável exige comprovação apurada em processo judicial com contraditório e ampla defesa (art. 74, § 2º da Lei 8.213/91). O cancelamento meramente administrativo sem o devido processo legal enseja nulidade. Sentimento: positivo."
     },
     {
       "id": "Q19",
@@ -363,12 +363,12 @@
       "referencias": [
         "Lei nº 8.213/1991, art. 77, caput."
       ],
-      "pontos_obrigatorios": [],
       "criterios_inaceitaveis": [
         "Deferir cota maior que a divisão igualitária por critério subjetivo de esforço ou tempo de convivência."
       ],
       "sentimento_esperado": "negativo",
-      "julgados_solicitados": 3
+      "julgados_solicitados": 3,
+      "gabarito_oficial": "A pensão por morte é rateada entre todos os dependentes habilitados em partes iguais (per capita), e não de forma proporcional ao tempo de relacionamento ou contribuição financeira na vida do de cujus (art. 77 da Lei 8.213/91). O sentimento é negativo."
     },
     {
       "id": "Q20",
@@ -378,12 +378,12 @@
       "referencias": [
         "Lei nº 8.213/1991, art. 74, I, e art. 78, § 1º."
       ],
-      "pontos_obrigatorios": [],
       "criterios_inaceitaveis": [
         "Exigir aguardar 60 dias pós-sentença para protocolar ou deferir a pensão por morte de dependente menor em caso de catástrofe/acidente."
       ],
       "sentimento_esperado": "positivo",
-      "julgados_solicitados": 3
+      "julgados_solicitados": 3,
+      "gabarito_oficial": "A alegação administrativa de prazo de 60 dias após a sentença de morte presumida é indevida. Em se tratando de tragédia/acidente com incapaz, o benefício é devido a contar da data do evento/sentença sem a carência abusiva alegada. O sentimento é positivo."
     },
     {
       "id": "Q21",
@@ -393,12 +393,12 @@
       "referencias": [
         "Lei nº 8.213/1991, art. 16, II e § 4º."
       ],
-      "pontos_obrigatorios": [],
       "criterios_inaceitaveis": [
         "Afirmar que os pais possuem presunção absoluta ou relativa automática de dependência econômica para fins previdenciários."
       ],
       "sentimento_esperado": "negativo",
-      "julgados_solicitados": 3
+      "julgados_solicitados": 3,
+      "gabarito_oficial": "Os pais são dependentes de segunda classe (art. 16, II, Lei 8.213/91). Diferente dos dependentes de primeira classe, a dependência econômica dos pais não é presumida, devendo ser comprovada de forma inequívoca. Sentimento: negativo."
     },
     {
       "id": "Q22",
@@ -408,12 +408,12 @@
       "referencias": [
         "Lei nº 8.213/1991, art. 74, § 1º e art. 77, § 7º."
       ],
-      "pontos_obrigatorios": [],
       "criterios_inaceitaveis": [
         "Aplicar a perda de benefício por indignidade a dependente comprovadamente inimputável/incapaz em desconformidade com a ressalva legal expressa."
       ],
       "sentimento_esperado": "positivo",
-      "julgados_solicitados": 3
+      "julgados_solicitados": 3,
+      "gabarito_oficial": "Embora o autor do crime doloso perca o direito à pensão, a própria Lei 8.213/91 expressamente ressalva dessa perda os dependentes absolutamente incapazes e inimputáveis. O sentimento esperado para a concessão ao incapaz é positivo."
     },
     {
       "id": "Q23",
@@ -423,12 +423,12 @@
       "referencias": [
         "Lei nº 8.213/1991, art. 74, § 1º e art. 77, § 7º."
       ],
-      "pontos_obrigatorios": [],
       "criterios_inaceitaveis": [
         "Considerar comprovada a inimputabilidade penal por mero atestado no processo administrativo do INSS sem sentença do juízo criminal."
       ],
       "sentimento_esperado": "positivo",
-      "julgados_solicitados": 3
+      "julgados_solicitados": 3,
+      "gabarito_oficial": "A apuração da autoria e a declaração de inimputabilidade para afastar a indignidade dependem de apuração e sentença criminal formal transitada em julgado. Sem a sentença penal formal de absolvição imprópria/inimputabilidade, cabe a suspensão ou anulação do ato. Sentimento para a ação da AGU: positivo."
     },
     {
       "id": "Q24",
@@ -438,12 +438,12 @@
       "referencias": [
         "Lei nº 8.213/1991, art. 77, § 2º-A."
       ],
-      "pontos_obrigatorios": [],
       "criterios_inaceitaveis": [
         "Exigir carência de 18 contribuições para concessão de pensão derivada de morte por acidente de trabalho ou doença profissional."
       ],
       "sentimento_esperado": "negativo",
-      "julgados_solicitados": 3
+      "julgados_solicitados": 3,
+      "gabarito_oficial": "Nos casos em que o óbito do segurado decorrer de acidente de qualquer natureza ou de doença profissional ou do trabalho, independe-se do recolhimento de 18 contribuições mensais ou da comprovação de 2 anos de casamento/união estável (art. 77, § 2º-A da Lei 8.213/91). O sentimento para a ação anulatória da AGU é negativo."
     },
     {
       "id": "Q25",
@@ -453,12 +453,12 @@
       "referencias": [
         "Lei nº 8.213/1991, art. 77, § 6º."
       ],
-      "pontos_obrigatorios": [],
       "criterios_inaceitaveis": [
         "Sustentar que o trabalho formal ou MEI extingue automaticamente a pensão por morte do filho dependente com deficiência grave/intelectual."
       ],
       "sentimento_esperado": "negativo",
-      "julgados_solicitados": 3
+      "julgados_solicitados": 3,
+      "gabarito_oficial": "O exercício de atividade remunerada, inclusive na condição de microempreendedor individual (MEI), não impede a concessão ou manutenção da pensão do dependente com deficiência intelectual, mental ou grave (art. 77, § 6º da Lei 8.213/91). O sentimento para a pretensão da AGU é negativo."
     },
     {
       "id": "Q26",
@@ -468,12 +468,12 @@
       "referencias": [
         "Lei nº 8.213/1991, art. 74, § 2º e art. 103-A; Lei nº 9.784/1999, art. 54."
       ],
-      "pontos_obrigatorios": [],
       "criterios_inaceitaveis": [
         "Declarar a decadência do direito da Administração Pública de anular atos manifestamente fraudulentos e eivados de má-fé."
       ],
       "sentimento_esperado": "positivo",
-      "julgados_solicitados": 3
+      "julgados_solicitados": 3,
+      "gabarito_oficial": "Comprovada a má-fé, simulação ou fraude na concessão, afasta-se o prazo decadencial decenal da Administração (art. 103-A da Lei 8.213/91 c/c art. 74, § 2º). A AGU pode pleitear o cancelamento judicial a qualquer tempo. Sentimento: positivo."
     },
     {
       "id": "Q27",
@@ -483,12 +483,12 @@
       "referencias": [
         "Lei nº 8.213/1991, art. 74, § 1º."
       ],
-      "pontos_obrigatorios": [],
       "criterios_inaceitaveis": [
         "Condicionar a perda da pensão por indignidade à obrigatória consumação do homicídio."
       ],
       "sentimento_esperado": "positivo",
-      "julgados_solicitados": 3
+      "julgados_solicitados": 3,
+      "gabarito_oficial": "A condenação transitada em julgado por tentativa de homicídio doloso contra o segurado gera a perda do direito à pensão por morte, independentemente de a causa mortis posterior ter sido diversa/natural (art. 74, § 1º da Lei 8.213/91). O sentimento para a ação da AGU é positivo."
     },
     {
       "id": "Q28",
@@ -498,12 +498,12 @@
       "referencias": [
         "Lei nº 8.213/1991, art. 74, § 1º e art. 103-A."
       ],
-      "pontos_obrigatorios": [],
       "criterios_inaceitaveis": [
         "Entender que a decadência do art. 103-A se aplica de forma inflexível mesmo em casos de má-fé e indignidade penal."
       ],
       "sentimento_esperado": "positivo",
-      "julgados_solicitados": 3
+      "julgados_solicitados": 3,
+      "gabarito_oficial": "Apesar do decurso do prazo de 10 anos, a demonstração de ocultação e má-fé afasta a decadência administrativa (art. 103-A da Lei 8.213/91), permitindo a desconstituição da pensão por conta do crime atentatório. O sentimento esperado é de potencial sentimento positivo (em face da má-fé que afasta a decadência)."
     },
     {
       "id": "Q29",
@@ -513,12 +513,12 @@
       "referencias": [
         "Lei nº 8.213/1991, art. 77, § 2º, V, \"c\", 3."
       ],
-      "pontos_obrigatorios": [],
       "criterios_inaceitaveis": [
         "Manter o benefício por 20 anos para beneficiário que tinha 29 anos de idade na data do óbito, em clara violação ao texto expresso da alínea \"c\"."
       ],
       "sentimento_esperado": "positivo",
-      "julgados_solicitados": 3
+      "julgados_solicitados": 3,
+      "gabarito_oficial": "Para beneficiário com idade entre 27 e 29 anos à época do óbito, o prazo correto de duração da pensão é de 10 anos (art. 77, § 2º, V, \"c\", item 3 da Lei 8.213/91). Cabível a revisão pelo INSS/AGU no prazo de 5 anos. Sentimento: positivo."
     },
     {
       "id": "Q30",
@@ -528,12 +528,12 @@
       "referencias": [
         "Lei nº 8.213/1991, art. 77, § 2º, V, \"c\", 5 e 6."
       ],
-      "pontos_obrigatorios": [],
       "criterios_inaceitaveis": [
         "Conceder pensão vitalícia para beneficiário com 41 anos à época do óbito (visto que a lei exige 44 anos ou mais para a vitaliciedade)."
       ],
       "sentimento_esperado": "positivo",
-      "julgados_solicitados": 3
+      "julgados_solicitados": 3,
+      "gabarito_oficial": "Com 41 anos de idade na data do óbito, o período correto de concessão previsto em lei é de 20 anos (para idade entre 41 e 43 anos - item 5 da alínea \"c\"). Para ser vitalícia, a idade mínima na data do óbito é de 44 anos (item 6 da alínea \"c\"). O direito do autor é de majorar de 15 para 20 anos (mas não vitalícia). Para a revisão de majoração o sentimento é positivo."
     }
   ]
 }

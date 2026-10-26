@@ -164,6 +164,32 @@ class Pipeline:
             if modo_explicito:
                 # MODO 1 (jurisprudência): só os campos escolhidos viram conteúdo,
                 # SEM truncar; os demais escolhidos viram metadata; resto ignorado.
+                #
+                # IMPORTANTE: além da ementa, incluímos no TEXTO do chunk a origem
+                # (arquivo, número do processo/acórdão e tribunal) para que a LLM
+                # RAG possa CITAR a decisão e informar de qual arquivo ela veio —
+                # metadados sozinhos não são enviados no contexto do RAG.
+                import os as _os
+                valores_norm = {_norm(c): _valor_str(v) for c, v in row.items()
+                                if c is not None}
+
+                def _primeiro(*nomes: str) -> str:
+                    for n in nomes:
+                        v = valores_norm.get(_norm(n))
+                        if v:
+                            return v
+                    return ""
+
+                arquivo_origem = _os.path.basename(str(caminho))
+                num_processo = _primeiro("PROCESSO JUDICIAL", "Nº", "processo")
+                tribunal = _primeiro("TRIBUNAL")
+                cabecalho = [f"ARQUIVO DE ORIGEM: {arquivo_origem}"]
+                if num_processo:
+                    cabecalho.append(f"PROCESSO/ACÓRDÃO: {num_processo}")
+                if tribunal:
+                    cabecalho.append(f"TRIBUNAL: {tribunal}")
+                partes_conteudo.append(" | ".join(cabecalho))
+
                 for campo, valor in row.items():
                     if campo is None:
                         continue
@@ -430,23 +456,40 @@ class Pipeline:
         Remove do ChromaDB todos os chunks cujo metadado `source` corresponde
         ao arquivo dado. Usado antes de reindexar um arquivo, para evitar
         duplicatas. Retorna quantos chunks foram removidos.
+
+        Eficiência: a deleção é feita por FILTRO (`where`) direto no Chroma, que
+        resolve no banco sem carregar todos os metadados na RAM (evita o erro
+        'Memória insuficiente' em bases grandes). O `source` gravado pode estar
+        em caminho relativo OU absoluto; por isso tentamos ambas as variações.
         """
         col = self._vector_store._collection
-        # O `source` gravado é o caminho como string. Tentamos ambas as formas
-        # (str(caminho) e o caminho absoluto) por robustez.
-        candidatos = {str(caminho), str(caminho.resolve())}
         removidos = 0
+
+        # Variações de caminho que podem ter sido gravadas em `source`.
+        candidatos = {
+            str(caminho),
+            str(caminho.resolve()),
+            caminho.as_posix(),
+            caminho.resolve().as_posix(),
+        }
+
         for src in candidatos:
             try:
-                existentes = col.get(where={"source": src})
+                # delete(where=...) deixa o Chroma filtrar e apagar no banco,
+                # sem materializar os metadados de toda a coleção em memória.
+                existentes = col.get(where={"source": src}, include=[])
                 ids = existentes.get("ids", []) or []
                 if ids:
                     col.delete(ids=ids)
                     removidos += len(ids)
             except Exception as exc:  # noqa: BLE001
                 log(f"   [aviso] Falha ao remover chunks de {src}: {exc}")
+
         if removidos:
             log(f"[limpeza] {removidos} chunk(s) antigos de '{caminho.name}' removidos.")
+        else:
+            log(f"[limpeza] Nenhum chunk antigo de '{caminho.name}' encontrado "
+                f"para remover (ok se for a 1ª indexação do arquivo).")
         return removidos
 
     # -- Indexação completa --------------------------------------------------
@@ -1030,6 +1073,25 @@ def executar_benchmarking(
             on_wait=_wait_log,
         )
         log(f"   [juiz] Juiz avaliou em {aval['tempo_avaliacao_juiz_s']}s")
+
+        # Reconcilia a aderência de sentimento de forma DETERMINÍSTICA: compara o
+        # sentimento identificado pelo Juiz com o sentimento_esperado do gabarito,
+        # em vez de confiar no booleano que o modelo devolve (que às vezes se
+        # contradiz — ex.: identifica "positivo" igual ao gabarito, mas marca
+        # como divergente). Só ajusta quando o gabarito define um sentimento
+        # claro (positivo/negativo); casos sem sentimento esperado ficam como o
+        # modelo retornou.
+        sent_esperado = str(gab_item.get("sentimento_esperado", "")).strip().lower()
+        if sent_esperado in ("positivo", "negativo"):
+            for chave in ("avaliacao_llm_padrao", "avaliacao_llm_rag"):
+                av = aval.get(chave) or {}
+                sent_id = str(av.get("sentimento_identificado", "")).strip().lower()
+                # Aderente SOMENTE quando a resposta cravou exatamente o
+                # sentimento esperado. Se identificou o oposto OU não cravou um
+                # sentimento claro (neutro/inconclusivo/n.a./ausente), conta como
+                # DIVERGENTE — o gabarito exigia um sentimento claro e a resposta
+                # não o atendeu.
+                av["sentimento_aderente_gabarito"] = (sent_id == sent_esperado)
 
         def _fmt_notas(rotulo: str, av: dict):
             erros = av.get("erros_criticos") or []

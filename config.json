@@ -44,7 +44,7 @@
     "embedding_model": "sentence-transformers/all-MiniLM-L6-v2",
     "collection_name": "pensao_por_morte",
     "persist_directory": "data/chroma_db",
-    "index_batch_size": 200,
+    "index_batch_size": 64,
     "csv_base_juridica": {
       "delimitador": "auto",
       "limite_campo_chars": 500,
@@ -62,6 +62,6 @@
   },
   "prompts": {
     "llm_padrao": "Responda de forma precisa à seguinte questão de {dominio}: {pergunta}",
-    "llm_rag": "Você é um assistente jurídico especializado em {dominio}. Responda à pergunta utilizando ESTRITAMENTE as informações fornecidas no contexto abaixo.\n\nCONTEXTO:\n{contexto_recuperado}\n\nPERGUNTA:\n{pergunta}"
+    "llm_rag": "Você é um assistente jurídico especializado em {dominio}. Responda à pergunta utilizando ESTRITAMENTE as informações fornecidas no contexto abaixo.\n\nQuando a pergunta pedir decisões/julgados, cite APENAS decisões que constem no contexto, informando para cada uma: o número do processo/acórdão (campo PROCESSO/ACÓRDÃO), a ementa (campo EMENTA) e o ARQUIVO DE ORIGEM de onde a decisão foi extraída. NÃO invente números de processo, ementas ou tribunais: se o contexto não trouxer decisões suficientes, declare isso explicitamente em vez de fabricar.\n\nCONTEXTO:\n{contexto_recuperado}\n\nPERGUNTA:\n{pergunta}"
   }
 }

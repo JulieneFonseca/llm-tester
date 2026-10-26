@@ -98,6 +98,16 @@ Para cada questão você recebe:
    entendimentos jurisprudenciais.
 5. Não presuma que uma referência citada pela resposta é verdadeira ou pertinente
    sem evidência suficiente.
+5a. DISTINÇÃO OBRIGATÓRIA sobre referências: NÃO classifique uma lei, artigo,
+   súmula ou dispositivo como "inexistente" ou "inventado" apenas porque ele não
+   consta na REFERÊNCIA do gabarito. O gabarito lista as fontes esperadas, não a
+   totalidade do ordenamento jurídico. Quando a resposta citar um dispositivo que
+   existe mas não está nas referências do gabarito, descreva isso como
+   "cita dispositivo não referenciado no gabarito" (ou "fora das referências do
+   gabarito"). Reserve os termos "inexistente", "inventado" ou "alucinado"
+   EXCLUSIVAMENTE para casos em que o dispositivo/julgado realmente não existe ou
+   foi claramente fabricado. Na dúvida sobre a existência, use "não referenciado
+   no gabarito" e não afirme inexistência.
 6. Quando a pergunta exigir quantidade específica de julgados, avalie o atendimento
    desse requisito e a possibilidade de verificar a autenticidade e a pertinência
    das decisões.
@@ -139,6 +149,14 @@ gabarito, registrando cada ocorrência em "erros_criticos". Erros críticos deve
 refletir-se nas notas de precisão, fidelidade ou completude, conforme a natureza
 do erro. Uma boa nota em outros critérios NÃO compensa um erro jurídico crítico.
 
+Ao redigir as descrições em "erros_criticos" E TAMBÉM no campo
+"justificativa_juiz", seja preciso na terminologia: se a resposta cita um
+dispositivo/julgado que EXISTE mas NÃO está na REFERÊNCIA do gabarito, escreva
+"cita dispositivo não referenciado no gabarito" — NUNCA "cita artigo inexistente".
+Só use "inexistente"/"inventado"/"alucinado" quando houver evidência de que o
+dispositivo ou julgado realmente não existe. Essa regra de terminologia vale para
+TODOS os textos da sua avaliação, incluindo a justificativa.
+
 # SENTIMENTO PROCESSUAL
 
 Quando a pergunta solicitar o sentimento ligado à probabilidade de sucesso/derrota,
@@ -149,6 +167,15 @@ classifique em:
 - nao_aplicavel: a pergunta não solicita sentimento.
 Não interprete essas categorias como probabilidades estatísticas reais de vitória.
 Verifique se a classificação da resposta corresponde à orientação do gabarito.
+
+COERÊNCIA OBRIGATÓRIA entre "sentimento_identificado" e
+"sentimento_aderente_gabarito": compare o sentimento que você identificou na
+resposta com o SENTIMENTO ESPERADO do gabarito. Se forem IGUAIS (ex.: ambos
+"positivo"), "sentimento_aderente_gabarito" DEVE ser true. Se forem OPOSTOS
+(ex.: um "positivo" e o outro "negativo"), DEVE ser false. Se o gabarito não
+definir um sentimento claro ou a pergunta não pedir sentimento, use null. NUNCA
+marque como divergente (false) quando o sentimento identificado é igual ao do
+gabarito.
 
 # RASTREABILIDADE DE JULGADOS
 
@@ -432,11 +459,16 @@ class Judge:
         if self._llm_texto is None:
             from langchain_groq import ChatGroq
 
+            # timeout EVITA que a geração do parecer final fique pendurada
+            # indefinidamente se a API não responder. max_tokens limita o
+            # tamanho do parecer (e deixa orçamento p/ o raciocínio dos gpt-oss).
             self._llm_texto = ChatGroq(
                 model=self.modelo,
                 temperature=0.2,
                 api_key=self.config.groq_api_key,
                 max_retries=0,
+                timeout=self.params.get("parecer_timeout_s", 90),
+                max_tokens=self.params.get("max_tokens_parecer", 1800),
             )
         return self._llm_texto
 
@@ -497,7 +529,14 @@ class Judge:
             "Escreva um parecer final consolidado, técnico e objetivo, em português, "
             "comparando duas abordagens de IA jurídica: a LLM Padrão (sem contexto) e "
             "a LLM com RAG (com contexto jurídico recuperado). "
-            "Baseie-se estritamente nas métricas e nos casos fornecidos."
+            "Baseie-se estritamente nas métricas e nos casos fornecidos.\n\n"
+            "REGRA OBRIGATÓRIA SOBRE LATÊNCIA/TEMPO: a abordagem vencedora deve ser "
+            "decidida EXCLUSIVAMENTE pela QUALIDADE JURÍDICA (fidelidade, precisão "
+            "vs. gabarito, completude, erros críticos e aderência do sentimento). "
+            "O tempo de resposta, o overhead e qualquer medida de latência são apenas "
+            "INFORMATIVOS e NÃO PODEM, em hipótese alguma, determinar ou desempatar o "
+            "resultado. Se a qualidade das duas abordagens for equivalente, declare "
+            "EMPATE — nunca use a latência como critério de desempate."
         )
 
         user = f"""Com base nas avaliações do benchmarking abaixo, escreva um PARECER FINAL.
@@ -508,10 +547,17 @@ Detalhe por pergunta:
 {resumo_casos}
 
 O parecer deve conter, em texto corrido (3 a 5 parágrafos):
-1. Qual abordagem teve MELHOR desempenho geral e por quê (cite as métricas).
+1. Qual abordagem teve MELHOR desempenho geral em QUALIDADE JURÍDICA e por quê
+   (cite as métricas de fidelidade, precisão, completude, erros críticos e
+   sentimento). NÃO use tempo/latência para definir a vencedora.
 2. Pontos fortes e fracos de cada abordagem observados nos casos.
-3. A questão central: o ganho de qualidade do RAG justifica o overhead de latência?
-4. Uma recomendação prática de qual abordagem usar neste domínio.
+3. Comente o tempo de resposta e o overhead do RAG APENAS como informação de
+   custo operacional, deixando claro que isso NÃO altera a abordagem vencedora.
+4. Uma recomendação prática de qual abordagem usar neste domínio, baseada na
+   qualidade (a latência pode ser citada como observação, não como fator decisivo).
+
+A escolha da vencedora deve considerar SOMENTE a qualidade jurídica. Em caso de
+qualidade equivalente, o resultado é EMPATE (jamais desempate por tempo/latência).
 
 Comece a resposta com UMA linha contendo apenas a palavra "VENCEDORA:" seguida
 de exatamente uma destas opções (sem colchetes, sem outros caracteres): RAG, Padrão
@@ -540,17 +586,23 @@ Em seguida, em nova linha, escreva o texto do parecer."""
 
         texto = (content or "").strip()
 
-        # Fallback: decide a vencedora pelas métricas (precisão; desempata por
-        # fidelidade e completude). Usado quando o modelo não devolve um valor
-        # válido na linha "VENCEDORA:".
+        # Fallback: decide a vencedora SOMENTE por qualidade jurídica (precisão +
+        # fidelidade + completude, penalizando erros críticos). A latência/tempo
+        # NÃO entra nesta conta — é apenas informativa. Usado quando o modelo não
+        # devolve um valor válido na linha "VENCEDORA:".
         def _vencedora_por_metricas() -> str:
             def _soma(suf: str) -> float:
                 return (
                     (metricas.get(f"nota_precisao_media_{suf}") or 0)
                     + (metricas.get(f"nota_fidelidade_media_{suf}") or 0)
                     + (metricas.get(f"nota_completude_media_{suf}") or 0)
+                    # Erros críticos penalizam a qualidade (quanto maior a taxa,
+                    # menor a pontuação). Escala em 0..5 para pesar como uma nota.
+                    - (metricas.get(f"taxa_erros_criticos_{suf}_pct") or 0) / 20.0
                 )
             s_padrao, s_rag = _soma("padrao"), _soma("rag")
+            # Empate quando a diferença de qualidade é desprezível (a latência
+            # jamais é usada para desempatar).
             if abs(s_rag - s_padrao) < 1e-9:
                 return "Empate"
             return "RAG" if s_rag > s_padrao else "Padrão"
