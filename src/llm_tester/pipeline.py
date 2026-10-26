@@ -962,6 +962,94 @@ def _montar_gabarito_estruturado(gab_item: dict) -> str:
     return "\n\n".join(partes)
 
 
+# Termos que indicam, num erro crítico do Juiz, uma acusação de que a resposta
+# INVENTOU um processo/julgado. Usados para suprimir esses erros quando os
+# processos citados foram confirmados (DataJud ou base CJF).
+_TERMOS_ALUCINACAO_PROC = (
+    "inventou", "inventad", "alucin", "inexistente", "não existe", "nao existe",
+    "fabricad", "fictício", "ficticio", "forjad", "número falso", "numero falso",
+    "processo falso", "julgado falso", "não encontrado", "nao encontrado",
+)
+# Termos que indicam que o erro é SOBRE processos/julgados (e não outra coisa).
+_TERMOS_REFERE_PROCESSO = (
+    "processo", "julgado", "acórdão", "acordao", "decisão", "decisao",
+    "jurisprud", "precedente", "ementa", "número cnj", "numero cnj",
+)
+
+
+def _ajustar_avaliacao_rag_por_validacao(
+    aval_rag: dict,
+    validacao_rag: list[dict],
+    log: Callable[[str], None],
+) -> None:
+    """
+    Ajusta DETERMINISTICAMENTE a avaliação do RAG usando a validação factual dos
+    processos citados (DataJud + base CJF). Modifica `aval_rag` no lugar.
+
+    Regras (aplicadas apenas ao RAG, que tem acesso à base):
+      1. julgados_verificaveis: elevado para, no mínimo, o nº de processos
+         citados CONFIRMADOS (existe no DataJud OU consta na base CJF). Nunca
+         reduz o valor que o Juiz já atribuiu.
+      2. Se há processos citados e TODOS os citados estão confirmados, remove de
+         `erros_criticos` as entradas que acusam invenção/alucinação de processo
+         (texto que combina um termo de "inventado/inexistente" com um termo que
+         se refere a processo/julgado). Erros não relacionados a isso permanecem.
+      3. Anexa à `justificativa_juiz` uma nota factual informando quantos
+         processos citados foram confirmados (e quantos pela base CJF).
+    """
+    if not isinstance(aval_rag, dict) or not validacao_rag:
+        return
+
+    total = len(validacao_rag)
+    confirmados = [p for p in validacao_rag if p.get("existe") or p.get("na_base_cjf")]
+    n_conf = len(confirmados)
+    n_base = sum(1 for p in confirmados if p.get("na_base_cjf") and not p.get("existe"))
+    if n_conf == 0:
+        return
+
+    # 1) Eleva julgados_verificaveis (sem reduzir o valor do Juiz).
+    verif_juiz = aval_rag.get("julgados_verificaveis") or 0
+    try:
+        verif_juiz = int(verif_juiz)
+    except (TypeError, ValueError):
+        verif_juiz = 0
+    if n_conf > verif_juiz:
+        aval_rag["julgados_verificaveis"] = n_conf
+        log(f"   [ajuste:rag] julgados_verificaveis {verif_juiz} -> {n_conf} "
+            f"(processos confirmados: {n_conf}/{total}, sendo {n_base} via base CJF).")
+
+    # 2) Remove erros críticos de "alucinação de processo" quando TODOS os
+    #    processos citados estão confirmados.
+    todos_confirmados = (n_conf == total)
+    if todos_confirmados:
+        erros = aval_rag.get("erros_criticos") or []
+        if isinstance(erros, list) and erros:
+            def _e_falsa_alucinacao(texto: str) -> bool:
+                t = str(texto).lower()
+                refere_proc = any(k in t for k in _TERMOS_REFERE_PROCESSO)
+                acusa_invencao = any(k in t for k in _TERMOS_ALUCINACAO_PROC)
+                return refere_proc and acusa_invencao
+
+            mantidos = [e for e in erros if not _e_falsa_alucinacao(e)]
+            removidos = len(erros) - len(mantidos)
+            if removidos:
+                aval_rag["erros_criticos"] = mantidos
+                log(f"   [ajuste:rag] {removidos} erro(s) crítico(s) de "
+                    f"'alucinação de processo' removido(s): todos os {total} "
+                    f"processo(s) citado(s) foram confirmados (DataJud/base CJF).")
+
+    # 3) Nota factual na justificativa (sempre que houver confirmados).
+    nota = (
+        f"[Validação factual] {n_conf} de {total} processo(s) citado(s) "
+        f"confirmado(s)"
+    )
+    if n_base:
+        nota += f" ({n_base} localizado(s) na base CJF, não no DataJud)"
+    nota += "."
+    just = str(aval_rag.get("justificativa_juiz", "") or "").strip()
+    aval_rag["justificativa_juiz"] = (just + " " + nota).strip() if just else nota
+
+
 def executar_benchmarking(
     config: Config,
     perguntas: list[dict],
@@ -1125,11 +1213,19 @@ def executar_benchmarking(
         # Validação factual de processos citados (DataJud - TRFs), se habilitada
         if validar_datajud:
             palavras_tema = config.tema.get("palavras_chave_datajud")
+            # A LLM Padrão NÃO tem acesso à base; um processo não encontrado no
+            # DataJud é de fato suspeito de invenção. Por isso não passamos
+            # base_dir para o Padrão.
             validacao_padrao = validar_processos_citados(
                 r_padrao["resposta"], palavras_tema=palavras_tema
             )
+            # Para o RAG, passamos base_dir: se o DataJud não achar mas o número
+            # constar nos CJF, confirma-se que a citação veio da base (não é
+            # alucinação) via os campos na_base_cjf/arquivo_cjf.
             validacao_rag = validar_processos_citados(
-                r_rag["resposta"], palavras_tema=palavras_tema
+                r_rag["resposta"],
+                palavras_tema=palavras_tema,
+                base_dir=base_dir,
             )
         else:
             validacao_padrao = []
@@ -1140,20 +1236,42 @@ def executar_benchmarking(
                 return
             log(f"   [datajud:{rotulo}] {len(procs)} processo(s) citado(s):")
             for p in procs:
-                if p.get("erro"):
-                    log(f"      - {p['numero']} -> {p['erro']}")
-                elif not p.get("existe"):
-                    log(f"      - {p['numero']} -> NÃO ENCONTRADO no DataJud (possível alucinação)")
-                else:
+                na_base = p.get("na_base_cjf")
+                arq_base = p.get("arquivo_cjf")
+                if p.get("existe"):
                     compat = "compatível" if p.get("compativel_tema") else "INCOMPATÍVEL"
                     assuntos = ", ".join(p.get("assuntos", [])) or "(sem assunto)"
                     log(
                         f"      - {p['numero']} -> existe | assunto: {assuntos} "
                         f"| tema: {compat}"
                     )
+                elif na_base:
+                    # Número consta na base CJF: citação legítima. Ou o DataJud
+                    # foi dispensado (preferir base), ou não confirmou (erro/sem
+                    # hits) mas a base confirma.
+                    if p.get("datajud_dispensado"):
+                        log(f"      - {p['numero']} -> consta na base CJF "
+                            f"({arq_base}); DataJud dispensado")
+                    else:
+                        motivo = p.get("erro") or "não localizado no DataJud"
+                        log(f"      - {p['numero']} -> {motivo}, MAS consta na "
+                            f"base CJF ({arq_base})")
+                elif p.get("erro"):
+                    log(f"      - {p['numero']} -> {p['erro']}")
+                else:
+                    log(f"      - {p['numero']} -> NÃO ENCONTRADO no DataJud nem "
+                        f"na base CJF (possível alucinação)")
 
         _log_validacao("padrao", validacao_padrao)
         _log_validacao("rag", validacao_rag)
+
+        # Ajuste determinístico da avaliação do RAG com base na validação
+        # factual: processos citados confirmados (DataJud ou base CJF) contam
+        # como verificáveis e não devem ser tratados como invenção pelo Juiz.
+        if validar_datajud:
+            _ajustar_avaliacao_rag_por_validacao(
+                aval["avaliacao_llm_rag"], validacao_rag, log
+            )
 
         resultado = {
             "id_pergunta": pid,

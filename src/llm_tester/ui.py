@@ -786,19 +786,32 @@ def _painel_validacao_processos(procs: list):
     """Exibe a validação factual de processos citados (DataJud)."""
     if not procs:
         return
-    st.caption("⚖️ Processos citados (validação DataJud):")
+    st.caption("⚖️ Processos citados (validação DataJud + base CJF):")
     for p in procs:
         num = p.get("numero", "")
-        if p.get("erro"):
-            st.markdown(f"- `{num}` — ⚪ {p['erro']}")
-        elif not p.get("existe"):
-            st.markdown(f"- `{num}` — 🔴 **Não encontrado** (possível alucinação)")
-        else:
+        na_base = p.get("na_base_cjf")
+        arq_base = p.get("arquivo_cjf") or "base CJF"
+        if p.get("existe"):
             assuntos = ", ".join(p.get("assuntos", [])) or "(sem assunto)"
             if p.get("compativel_tema"):
                 st.markdown(f"- `{num}` — 🟢 Existe | assunto: *{assuntos}* | tema compatível")
             else:
                 st.markdown(f"- `{num}` — 🟠 Existe | assunto: *{assuntos}* | tema **incompatível**")
+        elif na_base:
+            # Número consta nos arquivos da base: citação legítima do RAG.
+            if p.get("datajud_dispensado"):
+                st.markdown(
+                    f"- `{num}` — 🔵 **Consta na base** ({arq_base}) · DataJud dispensado"
+                )
+            else:
+                motivo = p.get("erro") or "não localizado no DataJud"
+                st.markdown(
+                    f"- `{num}` — 🔵 {motivo}, mas **consta na base** ({arq_base})"
+                )
+        elif p.get("erro"):
+            st.markdown(f"- `{num}` — ⚪ {p['erro']}")
+        else:
+            st.markdown(f"- `{num}` — 🔴 **Não encontrado** no DataJud nem na base (possível alucinação)")
 
 
 def _painel_avaliacao(
