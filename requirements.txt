@@ -36,6 +36,7 @@ rich==13.9.4
 # === Dados & métricas ===
 pandas==2.2.3
 plotly==5.24.1
+openpyxl==3.1.5  # leitura/escrita de .xlsx (export Power BI e upload de datasets)
 
 # === Utilidades ===
 python-dotenv==1.0.1

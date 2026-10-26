@@ -32,6 +32,7 @@ data/base_juridica/
 # Resultados (podem ser regenerados)
 outputs/*.json
 outputs/*.csv
+outputs/powerbi/
 
 # IDE
 .vscode/

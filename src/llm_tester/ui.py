@@ -1081,6 +1081,87 @@ def _painel_importar_resultados():
             st.caption("Nenhum relatório salvo encontrado em outputs/.")
 
 
+def _painel_exportar_powerbi():
+    """
+    Gera um arquivo Excel (.xlsx) otimizado para Power BI a partir dos
+    relatórios de outputs/ selecionados pelo usuário. O arquivo tem três abas
+    (resultados, metricas_globais, textos) no formato longo (abordagem como
+    coluna) e é salvo com nome FIXO, para o Power BI apontar uma vez e só
+    atualizar depois.
+    """
+    from . import powerbi
+
+    ss = st.session_state
+    cfg: Config = ss["config"]
+
+    with st.expander("📊 Exportar para Power BI (Excel)", expanded=False):
+        st.caption(
+            "Selecione as execuções e gere um Excel para montar seu painel no "
+            "Power BI. As abordagens (Padrão/RAG) ficam como coluna, ideais para "
+            "comparação. O arquivo é regravado com o mesmo nome a cada geração."
+        )
+
+        diretorio_saida = Path(cfg.dados.get("diretorio_saida", "outputs/"))
+        salvos = sorted(
+            diretorio_saida.glob("relatorio_*.json"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        ) if diretorio_saida.exists() else []
+
+        if not salvos:
+            st.caption("Nenhum relatório salvo encontrado em outputs/.")
+            return
+
+        import datetime as _dt
+
+        rotulos = {
+            f"{p.name}  "
+            f"({_dt.datetime.fromtimestamp(p.stat().st_mtime).strftime('%d/%m/%Y %H:%M')})": p
+            for p in salvos
+        }
+
+        marcar_todos = st.checkbox(
+            "Selecionar todos", value=True, key="pbi_todos"
+        )
+        selecao = st.multiselect(
+            "Relatórios a incluir",
+            options=list(rotulos.keys()),
+            default=list(rotulos.keys()) if marcar_todos else [],
+            key="pbi_selecao",
+        )
+
+        destino = diretorio_saida / "powerbi" / powerbi.NOME_ARQUIVO_PADRAO
+
+        if st.button("📊 Gerar Excel para Power BI", type="primary",
+                     key="pbi_gerar", disabled=not selecao):
+            caminhos = [rotulos[r] for r in selecao]
+            try:
+                caminho_gerado = powerbi.exportar_excel(caminhos, destino)
+            except Exception as exc:  # noqa: BLE001
+                st.error(f"Falha ao gerar o Excel: {exc}")
+            else:
+                st.success(
+                    f"✅ Excel gerado com {len(caminhos)} execução(ões) em "
+                    f"`{caminho_gerado}`."
+                )
+                st.caption(
+                    "No Power BI: **Obter Dados → Excel** e aponte para esse "
+                    "arquivo. Após gerar de novo, basta **Atualizar** no Power BI."
+                )
+                try:
+                    with open(caminho_gerado, "rb") as f:
+                        st.download_button(
+                            "⬇️ Baixar Excel",
+                            data=f.read(),
+                            file_name=powerbi.NOME_ARQUIVO_PADRAO,
+                            mime=("application/vnd.openxmlformats-officedocument."
+                                  "spreadsheetml.sheet"),
+                            key="pbi_download",
+                        )
+                except OSError:
+                    pass
+
+
 def _aba_dashboard():
     st.header("📈 Resultados")
     ss = st.session_state
@@ -1088,6 +1169,9 @@ def _aba_dashboard():
     # Permite recarregar uma execução anterior (JSON baixado ou de outputs/),
     # para revisualizar análises sem reprocessar após reiniciar o sistema.
     _painel_importar_resultados()
+
+    # Exportação para Power BI (seleção de execuções -> Excel multi-aba).
+    _painel_exportar_powerbi()
 
     relatorio = ss.get("relatorio")
     if not relatorio:
