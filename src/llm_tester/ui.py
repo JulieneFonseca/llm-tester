@@ -40,6 +40,16 @@ def _init_state():
     ss.setdefault("iniciar_lote", False)
     ss.setdefault("lote_selecionadas", [])
 
+    # Limpa o log de reindexação de execuções ANTERIORES uma única vez por
+    # sessão, para a aba de Reindexação começar limpa (não mostrar o resultado
+    # de uma reindexação de outra sessão). Só roda na primeira carga.
+    if not ss.get("_log_reindex_limpo"):
+        try:
+            Path("_reindex_log.txt").unlink(missing_ok=True)
+        except OSError:
+            pass
+        ss["_log_reindex_limpo"] = True
+
     # Aplica o tema configurado ao metadata dos datasets salvos.
     tema = ss["config"].tema
     utils.configurar_tema(tema.get("nome"), tema.get("area"))
@@ -448,25 +458,15 @@ def _extrair_registros(df: "pd.DataFrame", colunas: list[str]) -> list[dict]:
 def _aba_dados_teste():
     st.header("🗂️ Dados")
     st.caption(
-        "Cadastre e faça manutenção das perguntas e gabaritos. Sem dados "
-        "carregados, o sistema usa os arquivos padrão em data/."
+        "Cadastre e faça manutenção do Gabarito (Perguntas/Respostas). As "
+        "perguntas usadas na execução são extraídas automaticamente deste "
+        "mesmo arquivo — não há carga separada de perguntas. Sem dados "
+        "carregados, o sistema usa o arquivo padrão em data/."
     )
     cfg: Config = st.session_state["config"]
 
     _editor_dataset(
-        titulo="❓ Perguntas",
-        dados_key="perguntas",
-        colunas=["id", "pergunta", "categoria"],
-        carregar_bytes=utils.carregar_perguntas_bytes,
-        carregar_arquivo=utils.carregar_perguntas,
-        salvar_fn=utils.salvar_perguntas,
-        caminho=cfg.dados["arquivo_perguntas"],
-    )
-
-    st.divider()
-
-    _editor_dataset(
-        titulo="✅ Gabaritos",
+        titulo="✅ Gabarito (Perguntas/Respostas)",
         dados_key="gabarito",
         colunas=["id", "pergunta", "resposta_esperada", "ementa_esperada",
                  "referencias", "criterios_inaceitaveis", "sentimento_esperado",
@@ -514,13 +514,15 @@ def _iniciar_benchmarking(
         st.error("GROQ_API_KEY não configurada.")
         return
 
-    if perguntas is None:
-        perguntas = ss["perguntas"] or utils.carregar_perguntas(cfg.dados["arquivo_perguntas"])
     if gabarito is None:
         gabarito = ss["gabarito"] or utils.carregar_gabarito(cfg.dados["arquivo_gabarito"])
+    # As perguntas são DERIVADAS do gabarito (fonte única). Só caímos no derive
+    # completo quando o chamador não passou um subconjunto selecionado.
+    if perguntas is None:
+        perguntas = utils.perguntas_do_gabarito(gabarito)
 
     if not perguntas:
-        st.warning("Selecione ao menos uma pergunta para executar.")
+        st.warning("Carregue o Gabarito na aba 'Dados' antes de executar.")
         return
 
     cfg.dados["base_juridica"] = ss["base_dir"]
@@ -575,7 +577,9 @@ def _df_parcial(resultados: list[dict]) -> pd.DataFrame:
     for r in resultados:
         linhas.append({
             "ID": r["id_pergunta"],
-            "Pergunta": r["pergunta"][:50],
+            # Texto completo: o st.dataframe trunca visualmente na célula, mas o
+            # usuário pode alargar a coluna ou passar o mouse para ver tudo.
+            "Pergunta": r["pergunta"],
             "Tempo LLM Padrão (s)": f"{r['tempo_execucao_padrao_s']:.4f}",
             "Tempo LLM RAG (s)": f"{r['tempo_total_rag_s']:.4f}",
             "Nota LLM Padrão": r["avaliacao_llm_padrao"].get("nota_precisao_gabarito"),
@@ -650,11 +654,22 @@ def _aba_benchmarking():
 
     # ---- Execução em Lote -----------------------------------------------
     with sub_lote:
-        perguntas = ss.get("perguntas") or []
+        # Perguntas derivadas do Gabarito (fonte única). Carrega o gabarito da
+        # sessão ou do arquivo padrão, e extrai as perguntas dele.
+        gabarito_sessao = ss.get("gabarito")
+        if not gabarito_sessao:
+            try:
+                gabarito_sessao = utils.carregar_gabarito(cfg.dados["arquivo_gabarito"])
+            except Exception:  # noqa: BLE001
+                gabarito_sessao = []
+        perguntas = utils.perguntas_do_gabarito(gabarito_sessao)
         if not perguntas:
-            st.info("Carregue as perguntas na aba 'Dados'.")
+            st.info("Carregue o Gabarito na aba 'Dados'.")
         else:
-            st.caption("Selecione as perguntas cadastradas que deseja executar.")
+            st.caption(
+                "Marque as perguntas que deseja executar. Use o controle abaixo "
+                "para ver o enunciado completo ou apenas um resumo."
+            )
 
             item_keys = [f"lote_p_{idx}" for idx in range(len(perguntas))]
 
@@ -664,28 +679,37 @@ def _aba_benchmarking():
                 ss.setdefault(k, ss["lote_todas"])
 
             def _on_toggle_todas():
-                # Ao marcar/desmarcar "Selecionar todas", propaga para os itens.
                 for k in item_keys:
                     ss[k] = ss["lote_todas"]
 
             def _on_toggle_item():
-                # "Selecionar todas" reflete se todos os itens estão marcados.
                 ss["lote_todas"] = all(ss[k] for k in item_keys)
 
-            st.checkbox(
-                "Selecionar todas",
-                key="lote_todas",
-                on_change=_on_toggle_todas,
-            )
+            # Linha de controles compactos: selecionar todas + exibir completa.
+            cc1, cc2, _cc = st.columns([2, 2, 6])
+            with cc1:
+                st.checkbox(
+                    "Selecionar todas", key="lote_todas",
+                    on_change=_on_toggle_todas,
+                )
+            with cc2:
+                mostrar_completa = st.checkbox(
+                    "Mostrar pergunta completa", key="lote_mostrar_completa"
+                )
+
+            # Limite de caracteres exibidos quando não está em modo "completa".
+            LIMITE = 140
 
             selecionadas = []
             for idx, p in enumerate(perguntas):
                 pid = str(p.get("id", p.get("id_pergunta", idx + 1)))
                 texto = str(p.get("pergunta", ""))
+                if mostrar_completa or len(texto) <= LIMITE:
+                    rotulo = f"{pid} — {texto}"
+                else:
+                    rotulo = f"{pid} — {texto[:LIMITE]}…"
                 marcado = st.checkbox(
-                    f"{pid} — {texto[:80]}",
-                    key=item_keys[idx],
-                    on_change=_on_toggle_item,
+                    rotulo, key=item_keys[idx], on_change=_on_toggle_item,
                 )
                 if marcado:
                     selecionadas.append(p)
@@ -778,14 +802,20 @@ def _painel_validacao_processos(procs: list):
 
 
 def _painel_avaliacao(
-    titulo: str, aval: dict, procs: list | None = None, resposta: str | None = None
+    titulo: str, aval: dict, procs: list | None = None, resposta: str | None = None,
+    mostrar_resposta: bool = True,
 ):
-    """Renderiza a resposta, as notas intermediárias e os sinais de uma abordagem."""
+    """Renderiza a resposta, as notas intermediárias e os sinais de uma abordagem.
+
+    `mostrar_resposta=False` omite o expander com o texto da resposta (útil quando
+    a resposta já é exibida em outro lugar, p.ex. na comparação lado a lado).
+    """
     st.markdown(f"**{titulo}**")
 
-    # Texto da resposta gerada pela LLM.
-    with st.expander("💬 Ver resposta gerada", expanded=False):
-        st.write(resposta or "(sem resposta)")
+    # Texto da resposta gerada pela LLM (opcional).
+    if mostrar_resposta:
+        with st.expander("💬 Ver resposta gerada", expanded=False):
+            st.write(resposta or "(sem resposta)")
 
     if not aval:
         st.info("Sem avaliação disponível.")
@@ -848,8 +878,8 @@ def _secao_detalhamento_juiz(relatorio: dict):
 
     st.subheader("🧑‍⚖️ Detalhamento da Avaliação do modelo LLM Juiz")
     st.caption(
-        "Acompanhe as notas intermediárias e os sinais que compõem a decisão "
-        "do Juiz para cada pergunta, comparando Padrão e RAG."
+        "Compare lado a lado o gabarito e as respostas (Padrão e RAG) e veja as "
+        "notas e os sinais que compõem a decisão do Juiz para cada pergunta."
     )
 
     opcoes = {
@@ -859,15 +889,54 @@ def _secao_detalhamento_juiz(relatorio: dict):
     escolha = st.selectbox("Pergunta", list(opcoes.keys()))
     r = opcoes[escolha]
 
-    with st.expander("Ver pergunta, gabarito e respostas"):
-        st.markdown("**Pergunta:**")
+    # Pergunta em largura total (contexto da comparação).
+    with st.expander("📄 Ver enunciado da pergunta", expanded=False):
         st.write(r.get("pergunta", ""))
-        st.markdown("**Gabarito oficial:**")
-        st.write(r.get("gabarito_oficial", ""))
-        st.markdown("**Resposta da LLM Padrão:**")
-        st.write(r.get("resposta_llm_padrao", "") or "(sem resposta)")
-        st.markdown("**Resposta da LLM com RAG:**")
-        st.write(r.get("resposta_llm_rag", "") or "(sem resposta)")
+
+    # Comparação lado a lado: Gabarito x Resposta Padrão x Resposta RAG.
+    st.markdown("**🔎 Comparação: Gabarito × LLM Padrão × LLM com RAG**")
+    # Força a cor preta no texto das caixas (text_area desabilitado fica cinza
+    # claro por padrão, dificultando a leitura).
+    st.markdown(
+        """
+        <style>
+        div[data-testid="stTextArea"] textarea:disabled {
+            -webkit-text-fill-color: #000000 !important;
+            color: #000000 !important;
+            opacity: 1 !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    cg, cp, cr = st.columns(3)
+    with cg:
+        st.markdown("📘 **Gabarito**")
+        st.text_area(
+            "Gabarito",
+            value=r.get("gabarito_oficial", "") or "(sem gabarito)",
+            height=320, disabled=True, label_visibility="collapsed",
+            key=f"cmp_gab_{r.get('id_pergunta')}",
+        )
+    with cp:
+        st.markdown("🔵 **Resposta LLM Padrão**")
+        st.text_area(
+            "Resposta Padrão",
+            value=r.get("resposta_llm_padrao", "") or "(sem resposta)",
+            height=320, disabled=True, label_visibility="collapsed",
+            key=f"cmp_padrao_{r.get('id_pergunta')}",
+        )
+    with cr:
+        st.markdown("🟣 **Resposta LLM com RAG**")
+        st.text_area(
+            "Resposta RAG",
+            value=r.get("resposta_llm_rag", "") or "(sem resposta)",
+            height=320, disabled=True, label_visibility="collapsed",
+            key=f"cmp_rag_{r.get('id_pergunta')}",
+        )
+
+    st.divider()
+    st.markdown("**⚖️ Avaliação do Juiz (notas e sinais)**")
 
     col_p, col_r = st.columns(2)
     with col_p:
@@ -876,6 +945,7 @@ def _secao_detalhamento_juiz(relatorio: dict):
             r.get("avaliacao_llm_padrao", {}),
             r.get("validacao_processos_padrao", []),
             r.get("resposta_llm_padrao", ""),
+            mostrar_resposta=False,
         )
     with col_r:
         _painel_avaliacao(
@@ -883,6 +953,7 @@ def _secao_detalhamento_juiz(relatorio: dict):
             r.get("avaliacao_llm_rag", {}),
             r.get("validacao_processos_rag", []),
             r.get("resposta_llm_rag", ""),
+            mostrar_resposta=False,
         )
 
 
@@ -890,12 +961,127 @@ def _secao_detalhamento_juiz(relatorio: dict):
 # Aba 3 — Dashboard
 # ---------------------------------------------------------------------------
 
+def _carregar_relatorio_bytes(conteudo: bytes) -> dict:
+    """
+    Reconstrói o dict de relatório a partir dos bytes de um JSON baixado
+    anteriormente (botão 'Baixar JSON' da aba Resultados).
+
+    Valida a estrutura mínima esperada pelo dashboard: um objeto com
+    'execucao_metadata' (contendo 'metricas_qualidade_global') e a lista
+    'resultados_detalhados'. Levanta ValueError com mensagem amigável se o
+    arquivo não for um relatório válido.
+    """
+    try:
+        dados = json.loads(conteudo.decode("utf-8-sig"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError(f"Arquivo não é um JSON válido: {exc}") from exc
+
+    if not isinstance(dados, dict):
+        raise ValueError("O JSON não é um objeto de relatório.")
+
+    meta = dados.get("execucao_metadata")
+    if not isinstance(meta, dict) or "metricas_qualidade_global" not in meta:
+        raise ValueError(
+            "JSON sem 'execucao_metadata.metricas_qualidade_global'. "
+            "Envie o arquivo gerado pelo botão 'Baixar JSON' desta tela."
+        )
+    if "resultados_detalhados" not in dados:
+        raise ValueError(
+            "JSON sem 'resultados_detalhados'. "
+            "Envie o relatório completo gerado por esta aplicação."
+        )
+    return dados
+
+
+def _painel_importar_resultados():
+    """
+    Permite recarregar um relatório salvo (JSON baixado) para revisualizar os
+    resultados de uma execução anterior, mesmo após reiniciar a aplicação.
+
+    Lista também os relatórios já presentes em outputs/ para carga com 1 clique.
+    """
+    ss = st.session_state
+    cfg: Config = ss["config"]
+
+    with st.expander("📂 Carregar resultados salvos (de uma execução anterior)",
+                     expanded=not ss.get("relatorio")):
+        st.caption(
+            "Recupere uma análise já processada sem reexecutar. Envie o arquivo "
+            "JSON baixado nesta tela (botão 'Baixar JSON') ou escolha um dos "
+            "relatórios salvos automaticamente em outputs/."
+        )
+
+        up = st.file_uploader(
+            "Enviar relatório (.json)", type=["json"], key="up_relatorio"
+        )
+        if up is not None:
+            try:
+                relatorio = _carregar_relatorio_bytes(up.getvalue())
+            except ValueError as exc:
+                st.error(f"Falha ao carregar '{up.name}': {exc}")
+            else:
+                # Não usamos st.rerun() aqui: o uploader mantém o arquivo entre
+                # reruns, então um rerun reentraria neste bloco e interromperia a
+                # renderização ANTES do dashboard (tela em branco). Basta setar o
+                # relatório na sessão e deixar o fluxo seguir para o dashboard,
+                # que é desenhado logo abaixo nesta mesma execução.
+                ss["relatorio"] = relatorio
+                st.success(f"✅ Relatório '{up.name}' carregado.")
+
+        # Relatórios salvos automaticamente em outputs/ (relatorio_*.json).
+        diretorio_saida = Path(cfg.dados.get("diretorio_saida", "outputs/"))
+        salvos = sorted(
+            diretorio_saida.glob("relatorio_*.json"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        ) if diretorio_saida.exists() else []
+
+        if salvos:
+            import datetime as _dt
+
+            rotulos = {
+                f"{p.name}  "
+                f"({_dt.datetime.fromtimestamp(p.stat().st_mtime).strftime('%d/%m/%Y %H:%M')})": p
+                for p in salvos
+            }
+            col_sel, col_btn = st.columns([0.7, 0.3])
+            with col_sel:
+                escolha = st.selectbox(
+                    "Ou carregue um relatório salvo em outputs/",
+                    list(rotulos.keys()),
+                    key="sel_relatorio_salvo",
+                )
+            with col_btn:
+                st.write("")
+                st.write("")
+                if st.button("📥 Carregar", use_container_width=True,
+                             key="btn_carregar_salvo"):
+                    caminho = rotulos[escolha]
+                    try:
+                        relatorio = _carregar_relatorio_bytes(caminho.read_bytes())
+                    except ValueError as exc:
+                        st.error(f"Falha ao carregar '{caminho.name}': {exc}")
+                    else:
+                        ss["relatorio"] = relatorio
+                        st.success(f"✅ Relatório '{caminho.name}' carregado.")
+        else:
+            st.caption("Nenhum relatório salvo encontrado em outputs/.")
+
+
 def _aba_dashboard():
     st.header("📈 Resultados")
     ss = st.session_state
+
+    # Permite recarregar uma execução anterior (JSON baixado ou de outputs/),
+    # para revisualizar análises sem reprocessar após reiniciar o sistema.
+    _painel_importar_resultados()
+
     relatorio = ss.get("relatorio")
     if not relatorio:
-        st.info("Execute um benchmarking para ver os resultados aqui.")
+        st.info(
+            "Execute um benchmarking para ver os resultados aqui, ou carregue um "
+            "relatório salvo acima."
+        )
         return
 
     meta = relatorio["execucao_metadata"]
