@@ -716,6 +716,54 @@ class Pipeline:
         }
         return total
 
+    # -- Priorização de jurisprudência (arquivos CJF) ------------------------
+    #
+    # Termos que indicam que a pergunta pede DECISÕES/JULGADOS (jurisprudência),
+    # e não apenas a fundamentação legal. Quando detectados, o retrieval reserva
+    # vagas no top-k para chunks vindos dos arquivos CJF (jurisprudência), para
+    # que os PDFs de legislação não ocupem todas as posições.
+    _TERMOS_PEDE_JURISPRUDENCIA = (
+        "decis", "julgad", "acórdão", "acordao", "acórdãos", "acordaos",
+        "jurisprud", "precedente", "ementa", "provas judiciais", "prova judicial",
+        "provas judicias", "comprov",  # "comprovação" costuma pedir julgados no tema
+    )
+
+    @staticmethod
+    def _pede_jurisprudencia(pergunta: str) -> bool:
+        """True se a pergunta pede decisões/julgados/jurisprudência."""
+        t = (pergunta or "").lower()
+        return any(k in t for k in Pipeline._TERMOS_PEDE_JURISPRUDENCIA)
+
+    @staticmethod
+    def _num_julgados_solicitados(pergunta: str) -> int:
+        """
+        Extrai a quantidade de julgados pedida na pergunta (ex.: '3 decisões',
+        'traga 5 julgados'). Retorna 0 se não houver número explícito.
+        """
+        import re as _re
+        t = (pergunta or "").lower()
+        # Número seguido (em até ~3 palavras) de um termo de julgado/decisão.
+        m = _re.search(
+            r"(\d{1,2})\s+(?:\w+\s+){0,3}?(decis|julgad|acórdão|acordao|precedente|ementa)",
+            t,
+        )
+        if m:
+            try:
+                return int(m.group(1))
+            except ValueError:
+                return 0
+        return 0
+
+    @staticmethod
+    def _e_chunk_cjf(meta: dict | None) -> bool:
+        """True se o chunk veio de um arquivo cujo nome começa com 'CJF'."""
+        import os as _os
+        if not meta:
+            return False
+        origem = meta.get("source") or meta.get("fonte") or ""
+        nome = _os.path.basename(str(origem))
+        return nome.upper().startswith("CJF")
+
     def _get_retriever(self):
         if self._vector_store is None:
             raise RuntimeError("Base não indexada. Chame indexar_base() antes.")
@@ -760,72 +808,117 @@ class Pipeline:
 
         # Embedding da pergunta (mesma função usada na indexação).
         emb_query = self._get_embeddings().embed_query(pergunta)
+        q = np.array(emb_query, dtype=float)
 
-        if search_type == "mmr":
-            fetch_k = top_k * 3
-            lambda_mult = self.params.get("mmr_lambda", 0.7)
-            res = collection.query(
-                query_embeddings=[emb_query],
-                n_results=fetch_k,
-                include=["documents", "metadatas", "embeddings"],
-            )
-            docs = (res.get("documents") or [[]])[0]
-            metas = (res.get("metadatas") or [[]])[0]
-            embs = (res.get("embeddings") or [[]])[0]
+        def _cos(a, b):
+            na, nb = np.linalg.norm(a), np.linalg.norm(b)
+            return float(np.dot(a, b) / (na * nb)) if na and nb else 0.0
 
-            # Filtra candidatos com conteúdo válido.
-            candidatos = [
-                (doc, meta, emb)
-                for doc, meta, emb in zip(docs, metas, embs)
-                if doc is not None and str(doc).strip()
-            ]
-            if not candidatos:
+        def _mmr(candidatos: list[tuple], limite: int) -> list[tuple]:
+            """
+            Aplica MMR (relevância × diversidade) sobre `candidatos`
+            [(doc, meta, emb), ...], retornando até `limite` itens.
+            Se search_type != 'mmr', ordena só por similaridade com a query.
+            """
+            if not candidatos or limite <= 0:
                 return []
-
-            # MMR manual: seleciona iterativamente equilibrando relevância
-            # (similaridade com a query) e diversidade (dissimilaridade com os
-            # já escolhidos).
-            q = np.array(emb_query, dtype=float)
-
-            def _cos(a, b):
-                na, nb = np.linalg.norm(a), np.linalg.norm(b)
-                return float(np.dot(a, b) / (na * nb)) if na and nb else 0.0
-
             cand_embs = [np.array(e, dtype=float) for _, _, e in candidatos]
             sim_query = [_cos(q, e) for e in cand_embs]
-
+            if search_type != "mmr":
+                ordem = sorted(range(len(candidatos)),
+                               key=lambda i: sim_query[i], reverse=True)
+                return [candidatos[i] for i in ordem[:limite]]
+            lambda_mult = self.params.get("mmr_lambda", 0.7)
             selecionados: list[int] = []
             restantes = list(range(len(candidatos)))
-            while restantes and len(selecionados) < top_k:
+            while restantes and len(selecionados) < limite:
                 if not selecionados:
                     melhor = max(restantes, key=lambda i: sim_query[i])
                 else:
                     def score(i):
-                        div = max(
-                            _cos(cand_embs[i], cand_embs[j]) for j in selecionados
-                        )
+                        div = max(_cos(cand_embs[i], cand_embs[j]) for j in selecionados)
                         return lambda_mult * sim_query[i] - (1 - lambda_mult) * div
                     melhor = max(restantes, key=score)
                 selecionados.append(melhor)
                 restantes.remove(melhor)
+            return [candidatos[i] for i in selecionados]
 
-            return [
-                {"conteudo": str(candidatos[i][0]), "metadata": candidatos[i][1] or {}}
-                for i in selecionados
-            ]
-
-        # Similaridade pura
+        # Busca um lote amplo de candidatos (3x top-k, mínimo 24) para ter
+        # material suficiente tanto para MMR quanto para a reserva de vagas CJF.
+        fetch_k = max(top_k * 3, 24)
         res = collection.query(
             query_embeddings=[emb_query],
-            n_results=top_k,
-            include=["documents", "metadatas"],
+            n_results=fetch_k,
+            include=["documents", "metadatas", "embeddings"],
         )
         docs = (res.get("documents") or [[]])[0]
         metas = (res.get("metadatas") or [[]])[0]
-        return [
-            {"conteudo": str(doc), "metadata": meta or {}}
-            for doc, meta in zip(docs, metas)
+        embs = (res.get("embeddings") or [[]])[0]
+
+        candidatos = [
+            (doc, meta, emb)
+            for doc, meta, emb in zip(docs, metas, embs)
             if doc is not None and str(doc).strip()
+        ]
+        if not candidatos:
+            return []
+
+        # ---- Priorização de jurisprudência (arquivos CJF) ------------------
+        # Quando a pergunta pede decisões/julgados, reservamos vagas do top-k
+        # para chunks CJF, evitando que os PDFs de legislação ocupem tudo.
+        if self._pede_jurisprudencia(pergunta):
+            n_pedido = self._num_julgados_solicitados(pergunta)
+            # Reserva = nº pedido (com folga de +1) OU metade do top-k, limitado
+            # ao próprio top-k.
+            if n_pedido > 0:
+                reserva_cjf = min(top_k, n_pedido + 1)
+            else:
+                reserva_cjf = max(1, top_k // 2)
+
+            # Candidatos CJF presentes no lote geral.
+            cand_cjf = [c for c in candidatos if self._e_chunk_cjf(c[1])]
+
+            # Se o lote geral trouxe POUCOS CJF (os PDFs de legislação dominam a
+            # similaridade), faz uma busca AMPLA e filtra os CJF dela. Garante
+            # material de jurisprudência mesmo quando os CJF estão longe no
+            # ranking global.
+            if len(cand_cjf) < reserva_cjf:
+                fetch_amplo = max(fetch_k, 300)
+                res2 = collection.query(
+                    query_embeddings=[emb_query],
+                    n_results=fetch_amplo,
+                    include=["documents", "metadatas", "embeddings"],
+                )
+                d2 = (res2.get("documents") or [[]])[0]
+                m2 = (res2.get("metadatas") or [[]])[0]
+                e2 = (res2.get("embeddings") or [[]])[0]
+                # Dedup por conteúdo (evita repetir CJF já presente no lote geral).
+                textos_cjf = {c[0] for c in cand_cjf}
+                for doc, meta, emb in zip(d2, m2, e2):
+                    if doc is None or not str(doc).strip():
+                        continue
+                    if self._e_chunk_cjf(meta) and doc not in textos_cjf:
+                        cand_cjf.append((doc, meta, emb))
+                        textos_cjf.add(doc)
+
+            cand_outros = [c for c in candidatos if not self._e_chunk_cjf(c[1])]
+
+            escolhidos_cjf = _mmr(cand_cjf, reserva_cjf)
+            # Completa o restante do top-k com os demais (legislação etc.).
+            vagas_restantes = top_k - len(escolhidos_cjf)
+            escolhidos_outros = _mmr(cand_outros, vagas_restantes)
+
+            selecao = (escolhidos_cjf + escolhidos_outros)[:top_k]
+            return [
+                {"conteudo": str(d), "metadata": m or {}}
+                for d, m, _ in selecao
+            ]
+
+        # ---- Caso geral (sem pedido explícito de jurisprudência) -----------
+        selecao = _mmr(candidatos, top_k)
+        return [
+            {"conteudo": str(d), "metadata": m or {}}
+            for d, m, _ in selecao
         ]
 
     # -- Chamadas às LLMs (com cronometragem) --------------------------------
