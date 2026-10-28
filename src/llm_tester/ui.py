@@ -561,13 +561,60 @@ def _iniciar_benchmarking(
             arquivos_selecionados=ss.get("reindex_selecao_config", []),
         )
         ss["relatorio"] = relatorio
-        # Persiste em outputs/
-        utils.salvar_json(relatorio, cfg.dados["diretorio_saida"])
+        # Persiste em outputs/ SEMPRE (inclusive quando parcial/interrompido),
+        # para não perder o que já foi processado.
+        meta = relatorio.get("execucao_metadata", {}) or {}
+        interrupcao = meta.get("interrupcao") or {}
+        n_proc = meta.get("total_perguntas", 0)
+        caminho_json = utils.salvar_json(relatorio, cfg.dados["diretorio_saida"])
         utils.salvar_csv(relatorio, cfg.dados["diretorio_saida"])
-        progress.progress(1.0, text="Concluído!")
-        st.success("✅ Execução concluída. Veja o Dashboard de Resultados.")
+
+        if meta.get("execucao_interrompida"):
+            # Execução interrompida (ex.: limite diário de tokens). Avisa o
+            # usuário e informa que os parciais foram salvos.
+            progress.progress(1.0, text="Interrompido — resultados parciais salvos.")
+            st.warning(
+                f"⚠️ {interrupcao.get('mensagem', 'Execução interrompida.')}\n\n"
+                f"**{n_proc} pergunta(s)** foram processadas e salvas antes da "
+                f"interrupção (parada na pergunta "
+                f"{interrupcao.get('pergunta_parada', '?')}). O relatório parcial "
+                f"está disponível no Dashboard de Resultados e foi salvo em "
+                f"`{caminho_json}`."
+            )
+        else:
+            progress.progress(1.0, text="Concluído!")
+            st.success("✅ Execução concluída. Veja o Dashboard de Resultados.")
     except Exception as exc:  # noqa: BLE001
-        st.error(f"Erro durante a execução: {exc}")
+        # Falha inesperada (não tratada como interrupção no pipeline). Mesmo
+        # assim, tenta salvar os parciais acumulados para não perder trabalho.
+        parciais = ss.get("resultados_parciais") or []
+        if parciais:
+            try:
+                relatorio_parcial = utils.montar_relatorio(
+                    parciais,
+                    modelo_testado=ss.get("modelo_exec") or cfg.modelos["llm_execucao"],
+                    modelo_juiz=ss.get("modelo_juiz") or cfg.modelos["llm_juiz"],
+                    interrupcao={
+                        "motivo": "erro_inesperado",
+                        "mensagem": f"Erro durante a execução: {exc}",
+                        "processadas": len(parciais),
+                    },
+                )
+                ss["relatorio"] = relatorio_parcial
+                caminho_json = utils.salvar_json(
+                    relatorio_parcial, cfg.dados["diretorio_saida"]
+                )
+                utils.salvar_csv(relatorio_parcial, cfg.dados["diretorio_saida"])
+                st.error(
+                    f"Erro durante a execução: {exc}\n\n"
+                    f"✅ Mas os **{len(parciais)} resultado(s)** já processados "
+                    f"foram salvos em `{caminho_json}` e estão no Dashboard."
+                )
+            except Exception as exc2:  # noqa: BLE001
+                st.error(f"Erro durante a execução: {exc}. "
+                         f"Falha também ao salvar parciais: {exc2}")
+        else:
+            st.error(f"Erro durante a execução: {exc}")
     finally:
         ss["executando"] = False
 
@@ -1184,6 +1231,25 @@ def _aba_dashboard():
     meta = relatorio["execucao_metadata"]
     m = meta["metricas_qualidade_global"]
 
+    # Aviso de execução interrompida (ex.: limite diário de tokens): o relatório
+    # é PARCIAL, mas contém o que foi processado.
+    if meta.get("execucao_interrompida"):
+        interrupcao = meta.get("interrupcao") or {}
+        st.warning(
+            f"⚠️ **Relatório parcial** — a execução foi interrompida.\n\n"
+            f"{interrupcao.get('mensagem', '')}\n\n"
+            f"Perguntas processadas: **{meta.get('total_perguntas', 0)}**."
+        )
+
+    # Sem métricas (ex.: interrompido antes de concluir a 1ª pergunta): não há
+    # KPIs/gráficos a exibir.
+    if not m:
+        st.info(
+            "Nenhuma pergunta foi concluída nesta execução, portanto não há "
+            "métricas para exibir."
+        )
+        return
+
     # Parecer final consolidado da LLM Juiz
     parecer = meta.get("parecer_final_juiz") or {}
     if parecer.get("parecer_texto"):
@@ -1202,6 +1268,17 @@ def _aba_dashboard():
     c2.metric("Precisão vs Gabarito (RAG)", m["nota_precisao_media_rag"])
     c3.metric("Erros críticos % (Padrão)", m["taxa_erros_criticos_padrao_pct"])
     c3.metric("Erros críticos % (RAG)", m["taxa_erros_criticos_rag_pct"])
+
+    # Falhas técnicas de avaliação (o Juiz não conseguiu avaliar): são EXCLUÍDAS
+    # das médias acima. Informadas aqui para transparência quando houver.
+    falhas_p = m.get("avaliacoes_falha_tecnica_padrao", 0)
+    falhas_r = m.get("avaliacoes_falha_tecnica_rag", 0)
+    if falhas_p or falhas_r:
+        st.caption(
+            f"⚠️ Falhas técnicas de avaliação (não entram nas médias): "
+            f"Padrão {falhas_p} · RAG {falhas_r} "
+            f"(de {m.get('total_perguntas', 0)} pergunta(s))."
+        )
 
     st.subheader("⏱️ Performance Temporal")
     t1, t2, t3 = st.columns(3)
@@ -1636,17 +1713,48 @@ def _aba_rag():
         placeholder="Ex.: requisitos para concessão de pensão por morte",
     )
     n_result = st.slider("Nº de trechos a recuperar", 1, 15, p.get("top_k", 8))
+    apenas_cjf = st.checkbox(
+        "Buscar apenas nos arquivos CJF (jurisprudência)",
+        value=False,
+        help="Restringe o resultado aos chunks vindos dos arquivos cujo nome "
+             "começa com 'CJF' (as decisões/julgados), ignorando legislação.",
+    )
 
     if st.button("🔎 Buscar", type="primary") and consulta.strip():
         with st.spinner("Recuperando trechos..."):
             try:
-                res = col.query(query_texts=[consulta], n_results=n_result)
-                docs = (res.get("documents") or [[]])[0]
-                metas = (res.get("metadatas") or [[]])[0]
-                dists = (res.get("distances") or [[]])[0]
+                if apenas_cjf:
+                    # O Chroma não filtra por prefixo de string no `where`;
+                    # então buscamos um lote maior e filtramos pelo metadado
+                    # `source` (nome do arquivo começa com 'CJF'), ficando com
+                    # os n_result primeiros.
+                    bruto = col.query(
+                        query_texts=[consulta],
+                        n_results=max(n_result * 10, 100),
+                    )
+                    b_docs = (bruto.get("documents") or [[]])[0]
+                    b_metas = (bruto.get("metadatas") or [[]])[0]
+                    b_dists = (bruto.get("distances") or [[]])[0]
+                    docs, metas, dists = [], [], []
+                    for d, m, dist in zip(b_docs, b_metas, b_dists):
+                        nome = Path(str((m or {}).get("source", ""))).name
+                        if nome.upper().startswith("CJF"):
+                            docs.append(d)
+                            metas.append(m)
+                            dists.append(dist)
+                        if len(docs) >= n_result:
+                            break
+                else:
+                    res = col.query(query_texts=[consulta], n_results=n_result)
+                    docs = (res.get("documents") or [[]])[0]
+                    metas = (res.get("metadatas") or [[]])[0]
+                    dists = (res.get("distances") or [[]])[0]
 
                 if not docs:
-                    st.info("Nenhum trecho recuperado.")
+                    if apenas_cjf:
+                        st.info("Nenhum trecho CJF recuperado para esta consulta.")
+                    else:
+                        st.info("Nenhum trecho recuperado.")
                 else:
                     for i, (doc, meta, dist) in enumerate(zip(docs, metas, dists), 1):
                         origem = Path(str((meta or {}).get("source", "?"))).name

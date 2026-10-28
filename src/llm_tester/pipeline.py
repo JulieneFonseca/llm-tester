@@ -165,10 +165,13 @@ class Pipeline:
                 # MODO 1 (jurisprudência): só os campos escolhidos viram conteúdo,
                 # SEM truncar; os demais escolhidos viram metadata; resto ignorado.
                 #
-                # IMPORTANTE: além da ementa, incluímos no TEXTO do chunk a origem
-                # (arquivo, número do processo/acórdão e tribunal) para que a LLM
-                # RAG possa CITAR a decisão e informar de qual arquivo ela veio —
-                # metadados sozinhos não são enviados no contexto do RAG.
+                # IMPORTANTE (precisão do retrieval): o TEXTO do chunk (que vira o
+                # embedding) contém APENAS a ementa — o cabeçalho administrativo
+                # (arquivo/processo/tribunal) NÃO entra no vetor, pois é igual em
+                # todas as decisões e "aproximaria" ementas sem relação, piorando
+                # a busca semântica. A origem fica em METADADOS e é reconstruída
+                # no contexto do RAG (executar_rag) a partir deles, para a LLM
+                # ainda poder citar a decisão e o arquivo de onde ela veio.
                 import os as _os
                 valores_norm = {_norm(c): _valor_str(v) for c, v in row.items()
                                 if c is not None}
@@ -183,12 +186,12 @@ class Pipeline:
                 arquivo_origem = _os.path.basename(str(caminho))
                 num_processo = _primeiro("PROCESSO JUDICIAL", "Nº", "processo")
                 tribunal = _primeiro("TRIBUNAL")
-                cabecalho = [f"ARQUIVO DE ORIGEM: {arquivo_origem}"]
+                # Guarda a origem em metadados (NÃO no texto vetorizado).
+                metadata["arquivo_origem"] = arquivo_origem
                 if num_processo:
-                    cabecalho.append(f"PROCESSO/ACÓRDÃO: {num_processo}")
+                    metadata["processo_acordao"] = num_processo[:limite_metadado]
                 if tribunal:
-                    cabecalho.append(f"TRIBUNAL: {tribunal}")
-                partes_conteudo.append(" | ".join(cabecalho))
+                    metadata["tribunal_origem"] = tribunal[:limite_metadado]
 
                 for campo, valor in row.items():
                     if campo is None:
@@ -814,17 +817,20 @@ class Pipeline:
             na, nb = np.linalg.norm(a), np.linalg.norm(b)
             return float(np.dot(a, b) / (na * nb)) if na and nb else 0.0
 
-        def _mmr(candidatos: list[tuple], limite: int) -> list[tuple]:
+        def _mmr(candidatos: list[tuple], limite: int,
+                 forcar_relevancia: bool = False) -> list[tuple]:
             """
             Aplica MMR (relevância × diversidade) sobre `candidatos`
             [(doc, meta, emb), ...], retornando até `limite` itens.
-            Se search_type != 'mmr', ordena só por similaridade com a query.
+            Se search_type != 'mmr' OU forcar_relevancia=True, ordena só por
+            similaridade com a query (os mais aderentes primeiro, sem penalizar
+            por diversidade).
             """
             if not candidatos or limite <= 0:
                 return []
             cand_embs = [np.array(e, dtype=float) for _, _, e in candidatos]
             sim_query = [_cos(q, e) for e in cand_embs]
-            if search_type != "mmr":
+            if search_type != "mmr" or forcar_relevancia:
                 ordem = sorted(range(len(candidatos)),
                                key=lambda i: sim_query[i], reverse=True)
                 return [candidatos[i] for i in ordem[:limite]]
@@ -903,8 +909,12 @@ class Pipeline:
 
             cand_outros = [c for c in candidatos if not self._e_chunk_cjf(c[1])]
 
-            escolhidos_cjf = _mmr(cand_cjf, reserva_cjf)
-            # Completa o restante do top-k com os demais (legislação etc.).
+            # Para a jurisprudência, prioriza ADERÊNCIA ao assunto da pergunta
+            # (similaridade pura), não diversidade — assim os acórdãos trazidos
+            # são os mais próximos do tema pedido.
+            escolhidos_cjf = _mmr(cand_cjf, reserva_cjf, forcar_relevancia=True)
+            # Completa o restante do top-k com os demais (legislação etc.),
+            # onde a diversidade do MMR ainda é útil.
             vagas_restantes = top_k - len(escolhidos_cjf)
             escolhidos_outros = _mmr(cand_outros, vagas_restantes)
 
@@ -967,6 +977,45 @@ class Pipeline:
         resposta, tempo = self._invoke_llm(prompt, on_wait=on_wait)
         return {"resposta": resposta, "tempo_execucao_padrao_s": round(tempo, 4)}
 
+    @staticmethod
+    def _cabecalho_origem(meta: dict | None) -> str:
+        """
+        Reconstrói o cabeçalho de origem (arquivo/processo/tribunal) a partir
+        dos METADADOS do chunk, para prefixar no contexto do RAG. Assim a LLM
+        pode citar a decisão e o arquivo de onde ela veio, SEM que esse texto
+        administrativo tenha entrado no embedding (o que prejudicava a busca).
+
+        Compatível com índices antigos: se não houver os metadados de origem,
+        cai no `source` (caminho do arquivo) ou retorna vazio.
+        """
+        import os as _os
+        m = meta or {}
+        arquivo = (
+            m.get("arquivo_origem")
+            or (_os.path.basename(str(m.get("source"))) if m.get("source") else "")
+        )
+        processo = m.get("processo_acordao") or m.get("PROCESSO JUDICIAL") or m.get("Nº")
+        tribunal = m.get("tribunal_origem") or m.get("TRIBUNAL")
+
+        partes = []
+        if arquivo:
+            partes.append(f"ARQUIVO DE ORIGEM: {arquivo}")
+        if processo:
+            partes.append(f"PROCESSO/ACÓRDÃO: {processo}")
+        if tribunal:
+            partes.append(f"TRIBUNAL: {tribunal}")
+        return " | ".join(partes)
+
+    def _montar_trecho_contexto(self, trecho: dict) -> str:
+        """
+        Monta o texto de um trecho para o CONTEXTO do RAG: prefixa o cabeçalho
+        de origem (reconstruído dos metadados) + o conteúdo (ementa). O cabeçalho
+        só é adicionado aqui (na geração), não no embedding.
+        """
+        cab = self._cabecalho_origem(trecho.get("metadata"))
+        conteudo = str(trecho.get("conteudo", ""))
+        return f"{cab}\n{conteudo}" if cab else conteudo
+
     def executar_rag(self, pergunta: str, on_wait=None) -> dict[str, Any]:
         """LLM com RAG: retrieval + geração, cronometrados separadamente."""
         # 1) Retrieval (embedding da pergunta + busca vetorial).
@@ -976,9 +1025,15 @@ class Pipeline:
         trechos = self._recuperar_trechos(pergunta)
         tempo_retrieval = time.perf_counter() - t0
 
-        contexto = "\n\n---\n\n".join(t["conteudo"] for t in trechos)
+        # Monta o contexto PREFIXANDO o cabeçalho de origem (dos metadados) a
+        # cada trecho, para a LLM poder citar processo/arquivo mesmo sem que esse
+        # cabeçalho tenha entrado no embedding.
+        contexto = "\n\n---\n\n".join(
+            self._montar_trecho_contexto(t) for t in trechos
+        )
         fontes = [
-            {"conteudo": t["conteudo"][:500], "metadata": t["metadata"]}
+            {"conteudo": self._montar_trecho_contexto(t)[:500],
+             "metadata": t["metadata"]}
             for t in trechos
         ]
 
@@ -1143,6 +1198,79 @@ def _ajustar_avaliacao_rag_por_validacao(
     aval_rag["justificativa_juiz"] = (just + " " + nota).strip() if just else nota
 
 
+def _calcular_sentimento_aderente(
+    sentimento_identificado: Any,
+    sentimento_esperado: Any,
+) -> bool | None:
+    """
+    Determina `sentimento_aderente_gabarito` comparando o sentimento
+    IDENTIFICADO na resposta com o sentimento ESPERADO no gabarito, seguindo
+    regras rígidas (determinístico, não depende do booleano do modelo):
+
+      1. Correspondência: identificado == esperado  -> True.
+      2. Divergência: identificado exclusivamente oposto ao esperado -> False.
+      3. Múltiplos sentimentos: se a resposta apresenta positivo E negativo,
+         -> True quando o gabarito indicar qualquer um desses.
+      4. Gabarito sem sentimento claro (positivo/negativo) -> None.
+      5. (equivalente a 4 no plano de dados) sem requisito/sem esperado -> None.
+      6. Coerência: nunca False se houver correspondência de ao menos um dos
+         sentimentos identificados com o esperado.
+
+    Categorias consideradas: positivo, negativo, neutro. Normaliza caixa/espaços.
+    """
+    def _norm(v: Any) -> str:
+        return str(v or "").strip().lower()
+
+    esperado = _norm(sentimento_esperado)
+    identificado = _norm(sentimento_identificado)
+
+    # Regras 4 e 5: só avaliamos aderência quando o GABARITO define um
+    # sentimento claro (positivo ou negativo). Caso contrário, None.
+    if esperado not in ("positivo", "negativo"):
+        return None
+
+    tem_pos = "positivo" in identificado
+    tem_neg = "negativo" in identificado
+
+    # Regra 3 + 6: múltiplos sentimentos (positivo E negativo) identificados.
+    # Como o esperado é positivo ou negativo, qualquer um deles está presente
+    # -> há correspondência -> True.
+    if tem_pos and tem_neg:
+        return True
+
+    # Regra 1: correspondência exata com o esperado.
+    if esperado == "positivo" and tem_pos:
+        return True
+    if esperado == "negativo" and tem_neg:
+        return True
+
+    # Regra 2: oposto exclusivo do esperado.
+    if esperado == "positivo" and tem_neg:
+        return False
+    if esperado == "negativo" and tem_pos:
+        return False
+
+    # Identificado é neutro/inconclusivo/ausente: não corresponde ao esperado
+    # claro do gabarito -> divergente (o gabarito exigia um sentimento definido).
+    return False
+
+
+def _e_limite_diario_tokens(exc: Exception) -> bool:
+    """
+    Detecta o erro de LIMITE DIÁRIO de tokens da Groq (TPD - tokens per day),
+    que NÃO é resolvido por backoff: a cota do dia acabou e novas chamadas
+    continuarão falhando até o reset. Identificado pela mensagem/código do erro.
+    """
+    txt = str(exc).lower()
+    return (
+        "rate_limit_exceeded" in txt
+        or "tokens per day" in txt
+        or "tpd" in txt
+        or ("limit" in txt and "per day" in txt)
+        or ("429" in txt and "day" in txt)
+    )
+
+
 def executar_benchmarking(
     config: Config,
     perguntas: list[dict],
@@ -1221,6 +1349,10 @@ def executar_benchmarking(
     gab_idx = indexar_por_id(gabarito)
     total = len(perguntas)
     resultados: list[dict] = []
+    # Preenchido quando a execução é interrompida no meio (ex.: limite diário de
+    # tokens da Groq). Guarda a mensagem para informar o usuário e salvar os
+    # parciais já processados.
+    interrompido: dict[str, Any] | None = None
 
     for i, p in enumerate(perguntas, start=1):
         pid = str(p.get("id", p.get("id_pergunta", i)))
@@ -1233,46 +1365,73 @@ def executar_benchmarking(
         def _wait_log(espera, tentativa):
             log(f"   [429] Rate limit. Backoff {espera:.1f}s (tentativa {tentativa})...")
 
-        # LLM Padrão
-        r_padrao = pipeline.executar_padrao(pergunta, on_wait=_wait_log)
-        log(f"   [padrao] LLM Padrão respondeu em {r_padrao['tempo_execucao_padrao_s']}s")
+        try:
+            # LLM Padrão
+            r_padrao = pipeline.executar_padrao(pergunta, on_wait=_wait_log)
+            log(f"   [padrao] LLM Padrão respondeu em "
+                f"{r_padrao['tempo_execucao_padrao_s']}s")
 
-        # LLM RAG
-        r_rag = pipeline.executar_rag(pergunta, on_wait=_wait_log)
-        log(
-            f"   [rag] LLM RAG respondeu em {r_rag['tempo_total_rag_s']}s "
-            f"(retrieval {r_rag['tempo_retrieval_rag_s']}s + "
-            f"geração {r_rag['tempo_geracao_rag_s']}s)"
-        )
+            # LLM RAG
+            r_rag = pipeline.executar_rag(pergunta, on_wait=_wait_log)
+            log(
+                f"   [rag] LLM RAG respondeu em {r_rag['tempo_total_rag_s']}s "
+                f"(retrieval {r_rag['tempo_retrieval_rag_s']}s + "
+                f"geração {r_rag['tempo_geracao_rag_s']}s)"
+            )
 
-        # Juiz
-        aval = juiz.avaliar(
-            pergunta=pergunta,
-            gabarito=gab_texto,
-            resposta_padrao=r_padrao["resposta"],
-            resposta_rag=r_rag["resposta"],
-            on_wait=_wait_log,
-        )
-        log(f"   [juiz] Juiz avaliou em {aval['tempo_avaliacao_juiz_s']}s")
+            # Juiz
+            aval = juiz.avaliar(
+                pergunta=pergunta,
+                gabarito=gab_texto,
+                resposta_padrao=r_padrao["resposta"],
+                resposta_rag=r_rag["resposta"],
+                on_wait=_wait_log,
+            )
+            log(f"   [juiz] Juiz avaliou em {aval['tempo_avaliacao_juiz_s']}s")
+        except Exception as exc:  # noqa: BLE001
+            # Falha nas chamadas às LLMs. Se for o LIMITE DIÁRIO de tokens (TPD),
+            # não adianta continuar — a cota do dia acabou. Interrompemos o loop
+            # PRESERVANDO os resultados já processados (serão salvos e exibidos).
+            if _e_limite_diario_tokens(exc):
+                log(f"\n[LIMITE] Limite diário de tokens da Groq atingido na "
+                    f"pergunta {i}/{total} ({pid}). Interrompendo e salvando o "
+                    f"que já foi processado ({len(resultados)} pergunta(s)).")
+                interrompido = {
+                    "motivo": "limite_diario_tokens",
+                    "mensagem": (
+                        "Limite diário de tokens da Groq (TPD) atingido. A "
+                        "execução foi interrompida e os resultados processados "
+                        "até aqui foram salvos. Tente novamente após o reset da "
+                        "cota (ou use outra chave/plano)."
+                    ),
+                    "pergunta_parada": pid,
+                    "indice_parada": i,
+                    "total_perguntas": total,
+                    "processadas": len(resultados),
+                    "detalhe_erro": str(exc),
+                }
+                break
+            # Outros erros numa pergunta: registra e PULA para a próxima, sem
+            # abortar o benchmark inteiro (preserva robustez).
+            log(f"   [erro] Falha na pergunta {pid}: {exc}. Pulando para a próxima.")
+            continue
 
-        # Reconcilia a aderência de sentimento de forma DETERMINÍSTICA: compara o
-        # sentimento identificado pelo Juiz com o sentimento_esperado do gabarito,
-        # em vez de confiar no booleano que o modelo devolve (que às vezes se
-        # contradiz — ex.: identifica "positivo" igual ao gabarito, mas marca
-        # como divergente). Só ajusta quando o gabarito define um sentimento
-        # claro (positivo/negativo); casos sem sentimento esperado ficam como o
-        # modelo retornou.
-        sent_esperado = str(gab_item.get("sentimento_esperado", "")).strip().lower()
-        if sent_esperado in ("positivo", "negativo"):
-            for chave in ("avaliacao_llm_padrao", "avaliacao_llm_rag"):
-                av = aval.get(chave) or {}
-                sent_id = str(av.get("sentimento_identificado", "")).strip().lower()
-                # Aderente SOMENTE quando a resposta cravou exatamente o
-                # sentimento esperado. Se identificou o oposto OU não cravou um
-                # sentimento claro (neutro/inconclusivo/n.a./ausente), conta como
-                # DIVERGENTE — o gabarito exigia um sentimento claro e a resposta
-                # não o atendeu.
-                av["sentimento_aderente_gabarito"] = (sent_id == sent_esperado)
+        # Reconcilia a aderência de sentimento de forma DETERMINÍSTICA (ver
+        # _calcular_sentimento_aderente): compara o sentimento IDENTIFICADO na
+        # resposta com o sentimento ESPERADO do gabarito, aplicando as regras de
+        # correspondência/divergência/múltiplos sentimentos. Não confia no
+        # booleano que o modelo devolve (que às vezes se contradiz). Quando o
+        # gabarito não define um sentimento claro, o resultado é None.
+        sent_esperado = gab_item.get("sentimento_esperado")
+        for chave in ("avaliacao_llm_padrao", "avaliacao_llm_rag"):
+            av = aval.get(chave) or {}
+            # Falha técnica de avaliação não tem sentimento confiável: mantém o
+            # que veio (geralmente None) e não força aderência.
+            if str(av.get("status_avaliacao", "valida")) != "valida":
+                continue
+            av["sentimento_aderente_gabarito"] = _calcular_sentimento_aderente(
+                av.get("sentimento_identificado"), sent_esperado
+            )
 
         def _fmt_notas(rotulo: str, av: dict):
             erros = av.get("erros_criticos") or []
@@ -1390,8 +1549,10 @@ def executar_benchmarking(
 
     # Parecer final consolidado da LLM Juiz: analisa todas as avaliações e
     # posiciona qual abordagem (Padrão vs RAG) teve melhor desempenho.
+    # Se a execução foi INTERROMPIDA (ex.: limite diário de tokens), NÃO tentamos
+    # gerar o parecer — gastaria mais tokens e também falharia.
     parecer = {}
-    if resultados:
+    if resultados and interrompido is None:
         log("\n[juiz] Gerando parecer final consolidado...")
 
         def _wait_parecer(espera, tentativa):
@@ -1409,6 +1570,8 @@ def executar_benchmarking(
         except Exception as exc:  # noqa: BLE001
             log(f"[juiz] Falha ao gerar parecer final: {exc}")
             parecer = {}
+    elif interrompido is not None:
+        log("[juiz] Parecer final NÃO gerado (execução interrompida).")
 
     return montar_relatorio(
         resultados,
@@ -1416,4 +1579,5 @@ def executar_benchmarking(
         modelo_juiz=modelo_juiz or config.modelos["llm_juiz"],
         tempos_indexacao=pipeline.tempos_indexacao,
         parecer_final=parecer,
+        interrupcao=interrompido,
     )

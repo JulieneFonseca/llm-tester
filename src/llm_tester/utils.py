@@ -427,31 +427,56 @@ def calcular_metricas_globais(resultados: list[dict]) -> dict[str, Any]:
     t_padrao = [r.get("tempo_execucao_padrao_s") for r in resultados]
     t_rag = [r.get("tempo_total_rag_s") for r in resultados]
 
+    def _e_valida(av: dict | None) -> bool:
+        """
+        True se a avaliação é VÁLIDA (deve entrar nas médias/taxas). Avaliações
+        com falha técnica (o Juiz não conseguiu avaliar) são EXCLUÍDAS do
+        cálculo — uma falha técnica não é qualidade zero da resposta jurídica.
+        Retrocompatível: avaliações antigas sem `status_avaliacao` são tratadas
+        como válidas.
+        """
+        if not av:
+            return False
+        return str(av.get("status_avaliacao", "valida")) == "valida"
+
+    def _contar_falhas(abordagem: str) -> int:
+        return sum(
+            1 for r in resultados
+            if r.get(abordagem) and not _e_valida(r.get(abordagem))
+        )
+
     def notas(abordagem: str, campo: str) -> list[float]:
+        """Notas das avaliações VÁLIDAS (ignora falhas técnicas e notas None)."""
         out = []
         for r in resultados:
             av = r.get(abordagem, {})
-            if av and campo in av:
-                out.append(av[campo])
+            if not _e_valida(av):
+                continue
+            valor = av.get(campo)
+            if valor is not None:
+                out.append(valor)
         return out
 
     def taxa_erros_criticos(abordagem: str) -> float:
-        """% de respostas que incorreram em ao menos um erro crítico."""
+        """
+        % de respostas (entre as avaliadas com sucesso) que incorreram em ao
+        menos um erro crítico. Falhas técnicas NÃO entram no denominador.
+        """
         flags = []
         for r in resultados:
             av = r.get(abordagem)
-            if not av:
+            if not _e_valida(av):
                 continue
             erros = av.get("erros_criticos") or []
             flags.append(bool(erros) if isinstance(erros, list) else bool(erros))
         return round(100.0 * sum(flags) / len(flags), 2) if flags else 0.0
 
     def taxa_sentimento_aderente(abordagem: str) -> float:
-        """% de respostas cujo sentimento foi aderente ao gabarito."""
+        """% de respostas cujo sentimento foi aderente ao gabarito (só válidas)."""
         flags = []
         for r in resultados:
             av = r.get(abordagem)
-            if not av:
+            if not _e_valida(av):
                 continue
             aderente = av.get("sentimento_aderente_gabarito")
             if aderente is None:
@@ -461,6 +486,8 @@ def calcular_metricas_globais(resultados: list[dict]) -> dict[str, Any]:
 
     media_t_padrao = _media(t_padrao)
     media_t_rag = _media(t_rag)
+    falhas_padrao = _contar_falhas("avaliacao_llm_padrao")
+    falhas_rag = _contar_falhas("avaliacao_llm_rag")
 
     return {
         "tempo_medio_llm_padrao_s": media_t_padrao,
@@ -480,6 +507,12 @@ def calcular_metricas_globais(resultados: list[dict]) -> dict[str, Any]:
         "taxa_erros_criticos_rag_pct": taxa_erros_criticos("avaliacao_llm_rag"),
         "taxa_sentimento_aderente_padrao_pct": taxa_sentimento_aderente("avaliacao_llm_padrao"),
         "taxa_sentimento_aderente_rag_pct": taxa_sentimento_aderente("avaliacao_llm_rag"),
+        # Transparência sobre falhas técnicas de avaliação (excluídas das médias).
+        "total_perguntas": len(resultados),
+        "avaliacoes_falha_tecnica_padrao": falhas_padrao,
+        "avaliacoes_falha_tecnica_rag": falhas_rag,
+        "avaliacoes_validas_padrao": len(resultados) - falhas_padrao,
+        "avaliacoes_validas_rag": len(resultados) - falhas_rag,
     }
 
 
@@ -493,8 +526,16 @@ def montar_relatorio(
     modelo_juiz: str,
     tempos_indexacao: dict[str, Any] | None = None,
     parecer_final: dict[str, Any] | None = None,
+    interrupcao: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Monta o dicionário final conforme o contrato do JSON de saída."""
+    """
+    Monta o dicionário final conforme o contrato do JSON de saída.
+
+    `interrupcao` (opcional): quando a execução foi interrompida no meio (ex.:
+    limite diário de tokens), descreve o motivo. Fica em
+    execucao_metadata.interrupcao para a UI exibir o aviso e o usuário saber que
+    o relatório é PARCIAL.
+    """
     metricas = calcular_metricas_globais(resultados)
     return {
         "execucao_metadata": {
@@ -502,6 +543,8 @@ def montar_relatorio(
             "modelo_testado": modelo_testado,
             "modelo_juiz": modelo_juiz,
             "total_perguntas": len(resultados),
+            "execucao_interrompida": bool(interrupcao),
+            "interrupcao": interrupcao or {},
             "performance_indexacao": tempos_indexacao or {},
             "performance_temporal_global": {
                 "tempo_medio_llm_padrao_s": metricas.get("tempo_medio_llm_padrao_s", 0.0),
