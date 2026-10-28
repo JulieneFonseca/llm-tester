@@ -4,7 +4,7 @@ Interface de usuário (Streamlit) do llm-tester.
 Organizada em abas:
   1. Configurações (API, Base Jurídica, Modelos, Parâmetros)
   2. Dados de Teste (Perguntas e Gabaritos)
-  3. Benchmarking (Execução Individual e Execução em Lote)
+  3. Benchmarking (Execução Manual e Execução em Lote)
   4. Dashboard de Resultados (analytics & export)
 """
 
@@ -855,7 +855,7 @@ def _aba_benchmarking():
     cfg: Config = ss["config"]
 
     sub_lote, sub_ind, sub_reav = st.tabs(
-        ["📚 Execução em Lote", "📄 Execução Individual",
+        ["📚 Execução em Lote", "📄 Execução Manual",
          "🔁 Reavaliar com o Juiz"]
     )
 
@@ -930,7 +930,7 @@ def _aba_benchmarking():
                 ss["lote_selecionadas"] = selecionadas
                 ss["iniciar_lote"] = True
 
-    # ---- Execução Individual --------------------------------------------
+    # ---- Execução Manual --------------------------------------------
     with sub_ind:
         st.caption(
             "Teste uma pergunta avulsa. O gabarito é opcional; sem ele, o Juiz "
