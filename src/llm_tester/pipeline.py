@@ -1581,3 +1581,196 @@ def executar_benchmarking(
         parecer_final=parecer,
         interrupcao=interrompido,
     )
+
+
+def reavaliar_relatorio(
+    relatorio: dict,
+    config: Config,
+    modelo_juiz: str | None = None,
+    gabarito: list[dict] | None = None,
+    log: Callable[[str], None] | None = None,
+    on_progress: Callable[[int, int, dict], None] | None = None,
+) -> dict[str, Any]:
+    """
+    REAVALIA um relatório já existente apenas com a LLM Juiz, SEM reexecutar as
+    LLMs Padrão/RAG. Reaproveita as respostas já gravadas em cada resultado
+    (`resposta_llm_padrao`/`resposta_llm_rag`) e o gabarito, e:
+
+      - chama o Juiz novamente sobre essas respostas;
+      - reaplica a reconciliação determinística de sentimento;
+      - refaz a validação factual de processos (DataJud + base CJF);
+      - reaplica o ajuste determinístico do RAG;
+      - preserva os TEMPOS originais de geração (padrão/RAG) e as fontes;
+      - recalcula métricas e parecer final, gerando um NOVO relatório.
+
+    Útil quando as REGRAS do Juiz mudaram e se quer reaplicá-las a execuções
+    antigas, sem o custo de reexecutar a geração.
+
+    Args:
+        relatorio: dict de um relatório salvo (com `resultados_detalhados`).
+        config: configuração atual.
+        modelo_juiz: override do modelo do Juiz. Se None, usa o da config.
+        gabarito: gabarito estruturado (para recuperar `sentimento_esperado` por
+            id). Se None, carrega do arquivo padrão da config.
+        log / on_progress: callbacks de acompanhamento.
+
+    Returns:
+        Novo relatório (mesmo contrato), com `execucao_metadata.reavaliacao`.
+    """
+    from .judge import Judge
+    from .datajud import validar_processos_citados
+    from .utils import (
+        indexar_por_id,
+        montar_relatorio,
+        calcular_metricas_globais,
+        carregar_gabarito,
+    )
+
+    log = log or (lambda m: None)
+
+    resultados_orig = relatorio.get("resultados_detalhados", []) or []
+    if not resultados_orig:
+        raise ValueError("O relatório selecionado não contém resultados para reavaliar.")
+
+    juiz = Judge(config, modelo_juiz=modelo_juiz)
+    validar_datajud = config.parametros.get("validar_processos_datajud", True)
+    base_dir = config.dados["base_juridica"]
+
+    # Gabarito para recuperar o sentimento_esperado por id (reconciliação).
+    if gabarito is None:
+        try:
+            gabarito = carregar_gabarito(config.dados["arquivo_gabarito"])
+        except Exception:  # noqa: BLE001
+            gabarito = []
+    gab_idx = indexar_por_id(gabarito or [])
+
+    total = len(resultados_orig)
+    novos: list[dict] = []
+    interrompido: dict[str, Any] | None = None
+
+    log(f"[reavaliar] Reavaliando {total} pergunta(s) apenas com a LLM Juiz "
+        f"(modelo: {modelo_juiz or config.modelos['llm_juiz']}).")
+
+    def _wait_log(espera, tentativa):
+        log(f"   [429] Rate limit. Backoff {espera:.1f}s (tentativa {tentativa})...")
+
+    for i, r in enumerate(resultados_orig, start=1):
+        pid = str(r.get("id_pergunta", i))
+        pergunta = r.get("pergunta", "")
+        gab_texto = r.get("gabarito_oficial", "")
+        resp_padrao = r.get("resposta_llm_padrao", "") or ""
+        resp_rag = r.get("resposta_llm_rag", "") or ""
+
+        log(f"\n> [reavaliar] Pergunta {i}/{total} ({pid}): {pergunta[:60]}...")
+
+        try:
+            aval = juiz.avaliar(
+                pergunta=pergunta,
+                gabarito=gab_texto,
+                resposta_padrao=resp_padrao,
+                resposta_rag=resp_rag,
+                on_wait=_wait_log,
+            )
+            log(f"   [juiz] Reavaliado em {aval['tempo_avaliacao_juiz_s']}s")
+        except Exception as exc:  # noqa: BLE001
+            if _e_limite_diario_tokens(exc):
+                log(f"\n[LIMITE] Limite diário de tokens atingido na pergunta "
+                    f"{i}/{total} ({pid}). Interrompendo e salvando o que já foi "
+                    f"reavaliado ({len(novos)}).")
+                interrompido = {
+                    "motivo": "limite_diario_tokens",
+                    "mensagem": (
+                        "Limite diário de tokens da Groq (TPD) atingido durante a "
+                        "reavaliação. Os resultados reavaliados até aqui foram "
+                        "salvos. Tente novamente após o reset da cota."
+                    ),
+                    "pergunta_parada": pid,
+                    "indice_parada": i,
+                    "total_perguntas": total,
+                    "processadas": len(novos),
+                    "detalhe_erro": str(exc),
+                }
+                break
+            log(f"   [erro] Falha ao reavaliar {pid}: {exc}. Pulando.")
+            continue
+
+        # Reconciliação determinística de sentimento (usa o gabarito atual).
+        gab_item = gab_idx.get(pid, {})
+        sent_esperado = gab_item.get("sentimento_esperado")
+        for chave in ("avaliacao_llm_padrao", "avaliacao_llm_rag"):
+            av = aval.get(chave) or {}
+            if str(av.get("status_avaliacao", "valida")) != "valida":
+                continue
+            av["sentimento_aderente_gabarito"] = _calcular_sentimento_aderente(
+                av.get("sentimento_identificado"), sent_esperado
+            )
+
+        # Revalidação factual de processos citados.
+        if validar_datajud:
+            palavras_tema = config.tema.get("palavras_chave_datajud")
+            validacao_padrao = validar_processos_citados(
+                resp_padrao, palavras_tema=palavras_tema
+            )
+            validacao_rag = validar_processos_citados(
+                resp_rag, palavras_tema=palavras_tema, base_dir=base_dir
+            )
+            _ajustar_avaliacao_rag_por_validacao(
+                aval["avaliacao_llm_rag"], validacao_rag, log
+            )
+        else:
+            validacao_padrao = []
+            validacao_rag = []
+
+        # Monta o resultado PRESERVANDO os tempos/fontes originais da geração.
+        novo = dict(r)  # mantém tudo que já havia (respostas, tempos, fontes...)
+        novo.update({
+            "id_pergunta": pid,
+            "pergunta": pergunta,
+            "gabarito_oficial": gab_texto,
+            "avaliacao_llm_padrao": aval["avaliacao_llm_padrao"],
+            "avaliacao_llm_rag": aval["avaliacao_llm_rag"],
+            "tempo_avaliacao_juiz_s": aval["tempo_avaliacao_juiz_s"],
+            "validacao_processos_padrao": validacao_padrao,
+            "validacao_processos_rag": validacao_rag,
+        })
+        novos.append(novo)
+
+        if on_progress:
+            on_progress(i, total, novo)
+
+    # Parecer final (só se não interrompido e houver resultados).
+    parecer = {}
+    if novos and interrompido is None:
+        log("\n[juiz] Gerando parecer final consolidado (reavaliação)...")
+        try:
+            metricas = calcular_metricas_globais(novos)
+            parecer = juiz.parecer_final(metricas, novos, on_wait=_wait_log)
+            log(f"[juiz] Abordagem vencedora: {parecer.get('abordagem_vencedora')}")
+        except Exception as exc:  # noqa: BLE001
+            log(f"[juiz] Falha ao gerar parecer final: {exc}")
+            parecer = {}
+
+    # Metadados de origem para rastreabilidade.
+    meta_orig = relatorio.get("execucao_metadata", {}) or {}
+    reavaliacao = {
+        "origem": "reavaliacao_juiz",
+        "data_hora_original": meta_orig.get("data_hora"),
+        "modelo_testado_original": meta_orig.get("modelo_testado"),
+        "modelo_juiz_original": meta_orig.get("modelo_juiz"),
+        "modelo_juiz_reavaliacao": modelo_juiz or config.modelos["llm_juiz"],
+        "total_reavaliadas": len(novos),
+    }
+
+    rel = montar_relatorio(
+        novos,
+        # O modelo testado (gerador) é o ORIGINAL — não reexecutamos a geração.
+        modelo_testado=meta_orig.get("modelo_testado")
+        or config.modelos["llm_execucao"],
+        modelo_juiz=modelo_juiz or config.modelos["llm_juiz"],
+        tempos_indexacao=meta_orig.get("performance_indexacao") or {},
+        parecer_final=parecer,
+        interrupcao=interrompido,
+    )
+    # Anexa o bloco de rastreabilidade da reavaliação.
+    rel["execucao_metadata"]["reavaliacao"] = reavaliacao
+    return rel

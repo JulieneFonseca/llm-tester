@@ -619,6 +619,163 @@ def _iniciar_benchmarking(
         ss["executando"] = False
 
 
+def _iniciar_reavaliacao(caminho_relatorio, modelo_juiz, log_box, tabela_box,
+                         progress_box):
+    """
+    Carrega o relatório selecionado e o REAVALIA apenas com a LLM Juiz (sem
+    reexecutar Padrão/RAG). Salva um NOVO relatório e exibe no Dashboard.
+    """
+    from .pipeline import reavaliar_relatorio
+
+    ss = st.session_state
+    cfg: Config = ss["config"]
+
+    if not cfg.groq_api_key:
+        st.error("GROQ_API_KEY não configurada.")
+        return
+
+    # Estado ISOLADO da reavaliação (não usa ss["logs"]/ss["resultados_parciais"]
+    # do lote, para não acionar o bloco de acompanhamento do lote e duplicar a
+    # renderização).
+    ss["reav_logs"] = []
+    ss["reav_parciais"] = []
+    ss["executando"] = True
+
+    progress = progress_box.progress(0, text="Carregando relatório...")
+
+    def log(msg: str):
+        ss["reav_logs"].append(msg)
+        _render_logs(log_box, ss["reav_logs"][-40:])
+
+    def on_progress(i, total, resultado):
+        progress.progress(i / total, text=f"Reavaliando pergunta {i} de {total}...")
+        ss["reav_parciais"].append(resultado)
+        tabela_box.dataframe(
+            _df_parcial(ss["reav_parciais"]), use_container_width=True
+        )
+
+    try:
+        relatorio_orig = _carregar_relatorio_bytes(Path(caminho_relatorio).read_bytes())
+    except ValueError as exc:
+        st.error(f"Falha ao ler o relatório: {exc}")
+        ss["executando"] = False
+        return
+
+    try:
+        novo = reavaliar_relatorio(
+            relatorio_orig,
+            config=cfg,
+            modelo_juiz=modelo_juiz,
+            gabarito=ss.get("gabarito"),
+            log=log,
+            on_progress=on_progress,
+        )
+        ss["relatorio"] = novo
+        meta = novo.get("execucao_metadata", {}) or {}
+        caminho_json = utils.salvar_json(novo, cfg.dados["diretorio_saida"])
+        utils.salvar_csv(novo, cfg.dados["diretorio_saida"])
+
+        if meta.get("execucao_interrompida"):
+            interrupcao = meta.get("interrupcao") or {}
+            progress.progress(1.0, text="Interrompido — parciais salvos.")
+            st.warning(
+                f"⚠️ {interrupcao.get('mensagem', 'Reavaliação interrompida.')}\n\n"
+                f"Reavaliadas **{meta.get('total_perguntas', 0)}** e salvas em "
+                f"`{caminho_json}`."
+            )
+        else:
+            progress.progress(1.0, text="Concluído!")
+            st.success(
+                f"✅ Reavaliação concluída ({meta.get('total_perguntas', 0)} "
+                f"pergunta(s)). Novo relatório salvo em `{caminho_json}`. "
+                f"Veja o Dashboard de Resultados."
+            )
+    except Exception as exc:  # noqa: BLE001
+        st.error(f"Erro durante a reavaliação: {exc}")
+    finally:
+        ss["executando"] = False
+
+
+def _secao_reavaliar_juiz():
+    """
+    Painel para reavaliar um relatório salvo apenas com a LLM Juiz (sem
+    reexecutar as LLMs Padrão/RAG). Útil após mudar as regras do Juiz.
+    """
+    ss = st.session_state
+    cfg: Config = ss["config"]
+
+    st.caption(
+        "Reaplica a avaliação da **LLM Juiz** a um relatório já existente, "
+        "reaproveitando as respostas (Padrão/RAG) já geradas — sem reexecutar a "
+        "geração. Ideal quando as regras do Juiz mudaram. Gera um novo relatório."
+    )
+
+    diretorio_saida = Path(cfg.dados.get("diretorio_saida", "outputs/"))
+    salvos = sorted(
+        diretorio_saida.glob("relatorio_*.json"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    ) if diretorio_saida.exists() else []
+
+    if not salvos:
+        st.info("Nenhum relatório salvo encontrado em outputs/.")
+        return
+
+    import datetime as _dt
+    rotulos = {
+        f"{p.name}  "
+        f"({_dt.datetime.fromtimestamp(p.stat().st_mtime).strftime('%d/%m/%Y %H:%M')})": p
+        for p in salvos
+    }
+    escolha = st.selectbox(
+        "Relatório a reavaliar", list(rotulos.keys()), key="reav_sel"
+    )
+
+    modelos = cfg.modelos["modelos_disponiveis"]
+    juiz_atual = ss.get("modelo_juiz") or cfg.modelos["llm_juiz"]
+    modelo_juiz = st.selectbox(
+        "Modelo da LLM Juiz para a reavaliação",
+        modelos,
+        index=modelos.index(juiz_atual) if juiz_atual in modelos else 0,
+        key="reav_modelo_juiz",
+        help="Por padrão, o modelo de Juiz atualmente selecionado. Pode trocar.",
+    )
+
+    if st.button("🔁 Reavaliar com o Juiz", type="primary", key="btn_reavaliar"):
+        ss["reav_disparar"] = {
+            "caminho": str(rotulos[escolha]),
+            "modelo_juiz": modelo_juiz,
+        }
+
+    # Acompanhamento (logs + tabela) — renderizado UMA única vez, com estado
+    # ISOLADO (reav_logs/reav_parciais), para não duplicar nem colidir com o
+    # acompanhamento da execução em lote.
+    disparo = ss.pop("reav_disparar", None)
+    if disparo or ss.get("reav_logs") or ss.get("reav_parciais"):
+        st.divider()
+        st.subheader("🖥️ Console de Logs")
+        log_box = st.empty()
+        progress_box = st.empty()
+        st.subheader("📊 Tabela de Resultados")
+        tabela_box = st.empty()
+        if disparo:
+            _iniciar_reavaliacao(
+                caminho_relatorio=disparo["caminho"],
+                modelo_juiz=disparo["modelo_juiz"],
+                log_box=log_box,
+                tabela_box=tabela_box,
+                progress_box=progress_box,
+            )
+        else:
+            # Reruns seguintes: mostra o último estado da reavaliação.
+            _render_logs(log_box, ss.get("reav_logs", [])[-200:], altura=400)
+            if ss.get("reav_parciais"):
+                tabela_box.dataframe(
+                    _df_parcial(ss["reav_parciais"]),
+                    use_container_width=True,
+                )
+
+
 def _df_parcial(resultados: list[dict]) -> pd.DataFrame:
     linhas = []
     for r in resultados:
@@ -697,7 +854,10 @@ def _aba_benchmarking():
     ss = st.session_state
     cfg: Config = ss["config"]
 
-    sub_lote, sub_ind = st.tabs(["📚 Execução em Lote", "📄 Execução Individual"])
+    sub_lote, sub_ind, sub_reav = st.tabs(
+        ["📚 Execução em Lote", "📄 Execução Individual",
+         "🔁 Reavaliar com o Juiz"]
+    )
 
     # ---- Execução em Lote -----------------------------------------------
     with sub_lote:
@@ -782,6 +942,10 @@ def _aba_benchmarking():
         )
         if st.button("▶️ Executar", type="primary", key="btn_individual"):
             _executar_individual(pergunta, gabarito)
+
+    # ---- Reavaliar com o Juiz (a partir de um relatório salvo) ----------
+    with sub_reav:
+        _secao_reavaliar_juiz()
 
     # ---- Acompanhamento da execução em lote -----------------------------
     # Renderiza a seção UMA única vez, na ordem: Console de Logs -> Tabela.
