@@ -41,7 +41,7 @@
     "top_k": 8,
     "search_type": "mmr",
     "mmr_lambda": 0.7,
-    "embedding_model": "sentence-transformers/all-MiniLM-L6-v2",
+    "embedding_model": "intfloat/multilingual-e5-base",
     "collection_name": "pensao_por_morte",
     "persist_directory": "data/chroma_db",
     "index_batch_size": 64,

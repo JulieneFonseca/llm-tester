@@ -69,11 +69,29 @@ class Pipeline:
         if self._embeddings is None:
             from langchain_huggingface import HuggingFaceEmbeddings
 
-            self._embeddings = HuggingFaceEmbeddings(
-                model_name=self.params.get(
-                    "embedding_model", "sentence-transformers/all-MiniLM-L6-v2"
-                )
+            model_name = self.params.get(
+                "embedding_model", "sentence-transformers/all-MiniLM-L6-v2"
             )
+
+            # Modelos da família E5 (intfloat/*e5*) EXIGEM prefixos:
+            #   - "query: <texto>"   para as consultas
+            #   - "passage: <texto>" para os documentos/trechos indexados
+            # Sem esses prefixos o modelo perde muito desempenho. Detectamos o
+            # E5 pelo nome e aplicamos os prefixos automaticamente via uma
+            # subclasse — assim vale tanto na indexação (embed_documents) quanto
+            # na busca (embed_query), sem alterar os call sites.
+            if "e5" in model_name.lower():
+                class _E5Embeddings(HuggingFaceEmbeddings):
+                    def embed_documents(self, texts):
+                        textos = [f"passage: {t}" for t in texts]
+                        return super().embed_documents(textos)
+
+                    def embed_query(self, text):
+                        return super().embed_query(f"query: {text}")
+
+                self._embeddings = _E5Embeddings(model_name=model_name)
+            else:
+                self._embeddings = HuggingFaceEmbeddings(model_name=model_name)
         return self._embeddings
 
     # -- Ingestão RAG --------------------------------------------------------
@@ -789,16 +807,25 @@ class Pipeline:
             search_kwargs={"k": top_k}
         )
 
-    def _recuperar_trechos(self, pergunta: str) -> list[dict[str, Any]]:
+    def _recuperar_trechos(self, pergunta: str) -> dict[str, list[dict[str, Any]]]:
         """
-        Recupera os trechos relevantes buscando DIRETO na collection do Chroma.
+        Recupera os trechos relevantes SEPARADOS por fonte, buscando direto na
+        collection do Chroma.
 
-        Isso evita que o LangChain instancie objetos ``Document`` a partir de
-        registros com texto nulo (o que quebraria a validação do pydantic).
-        Aplica MMR manualmente quando ``search_type='mmr'`` e descarta trechos
-        sem conteúdo.
+        Estratégia (separação de fontes):
+          - "leis": trechos vindos APENAS da legislação (arquivos que NÃO são
+            CJF). É a fundamentação legal — sempre recuperada.
+          - "julgados": trechos vindos APENAS dos arquivos CJF (jurisprudência).
+            Só são recuperados quando a pergunta pede decisões/julgados.
 
-        Retorna uma lista de dicts: {"conteudo": str, "metadata": dict}.
+        Orçamento de trechos (top_k):
+          - Pergunta NÃO pede julgados -> top_k inteiro para leis.
+          - Pergunta pede julgados -> reserva N para julgados (CJF) e o restante
+            (top_k - N) para leis, garantindo fundamentação legal E exemplos de
+            jurisprudência sem um sufocar o outro.
+
+        Retorna: {"leis": [ {conteudo, metadata}, ... ],
+                  "julgados": [ {conteudo, metadata}, ... ] }.
         """
         if self._vector_store is None:
             raise RuntimeError("Base não indexada. Chame indexar_base() antes.")
@@ -849,9 +876,8 @@ class Pipeline:
                 restantes.remove(melhor)
             return [candidatos[i] for i in selecionados]
 
-        # Busca um lote amplo de candidatos (3x top-k, mínimo 24) para ter
-        # material suficiente tanto para MMR quanto para a reserva de vagas CJF.
-        fetch_k = max(top_k * 3, 24)
+        # Busca um lote amplo de candidatos (uma vez) e separa por fonte.
+        fetch_k = max(top_k * 4, 40)
         res = collection.query(
             query_embeddings=[emb_query],
             n_results=fetch_k,
@@ -867,69 +893,74 @@ class Pipeline:
             if doc is not None and str(doc).strip()
         ]
         if not candidatos:
-            return []
+            return {"leis": [], "julgados": []}
 
-        # ---- Priorização de jurisprudência (arquivos CJF) ------------------
-        # Quando a pergunta pede decisões/julgados, reservamos vagas do top-k
-        # para chunks CJF, evitando que os PDFs de legislação ocupem tudo.
-        if self._pede_jurisprudencia(pergunta):
+        # Separa os candidatos por fonte.
+        cand_cjf = [c for c in candidatos if self._e_chunk_cjf(c[1])]
+        cand_leis = [c for c in candidatos if not self._e_chunk_cjf(c[1])]
+
+        pede_julgados = self._pede_jurisprudencia(pergunta)
+
+        # Orçamento de vagas: leis sempre; julgados só quando pedidos.
+        if pede_julgados:
             n_pedido = self._num_julgados_solicitados(pergunta)
-            # Reserva = nº pedido (com folga de +1) OU metade do top-k, limitado
-            # ao próprio top-k.
-            if n_pedido > 0:
-                reserva_cjf = min(top_k, n_pedido + 1)
-            else:
-                reserva_cjf = max(1, top_k // 2)
+            vagas_julgados = min(top_k, n_pedido if n_pedido > 0 else max(1, top_k // 2))
+            vagas_leis = max(1, top_k - vagas_julgados)
+        else:
+            vagas_julgados = 0
+            vagas_leis = top_k
 
-            # Candidatos CJF presentes no lote geral.
-            cand_cjf = [c for c in candidatos if self._e_chunk_cjf(c[1])]
+        def _buscar_amplo_filtrado(manter_cjf: bool, ja_tenho: list[tuple],
+                                   mínimo: int) -> list[tuple]:
+            """
+            Se o lote inicial trouxe POUCOS itens da fonte desejada (a outra
+            fonte domina o ranking), faz uma busca ampla e filtra pela fonte,
+            completando `ja_tenho` sem duplicar (dedup por conteúdo).
+            """
+            if len(ja_tenho) >= mínimo:
+                return ja_tenho
+            res2 = collection.query(
+                query_embeddings=[emb_query],
+                n_results=max(fetch_k, 400),
+                include=["documents", "metadatas", "embeddings"],
+            )
+            d2 = (res2.get("documents") or [[]])[0]
+            m2 = (res2.get("metadatas") or [[]])[0]
+            e2 = (res2.get("embeddings") or [[]])[0]
+            vistos = {c[0] for c in ja_tenho}
+            ampliado = list(ja_tenho)
+            for doc, meta, emb in zip(d2, m2, e2):
+                if doc is None or not str(doc).strip():
+                    continue
+                if self._e_chunk_cjf(meta) != manter_cjf:
+                    continue
+                if doc in vistos:
+                    continue
+                ampliado.append((doc, meta, emb))
+                vistos.add(doc)
+            return ampliado
 
-            # Se o lote geral trouxe POUCOS CJF (os PDFs de legislação dominam a
-            # similaridade), faz uma busca AMPLA e filtra os CJF dela. Garante
-            # material de jurisprudência mesmo quando os CJF estão longe no
-            # ranking global.
-            if len(cand_cjf) < reserva_cjf:
-                fetch_amplo = max(fetch_k, 300)
-                res2 = collection.query(
-                    query_embeddings=[emb_query],
-                    n_results=fetch_amplo,
-                    include=["documents", "metadatas", "embeddings"],
-                )
-                d2 = (res2.get("documents") or [[]])[0]
-                m2 = (res2.get("metadatas") or [[]])[0]
-                e2 = (res2.get("embeddings") or [[]])[0]
-                # Dedup por conteúdo (evita repetir CJF já presente no lote geral).
-                textos_cjf = {c[0] for c in cand_cjf}
-                for doc, meta, emb in zip(d2, m2, e2):
-                    if doc is None or not str(doc).strip():
-                        continue
-                    if self._e_chunk_cjf(meta) and doc not in textos_cjf:
-                        cand_cjf.append((doc, meta, emb))
-                        textos_cjf.add(doc)
+        # LEIS (fundamentação legal): sempre. MMR (diversidade útil aqui).
+        cand_leis = _buscar_amplo_filtrado(False, cand_leis, vagas_leis)
+        escolhidos_leis = _mmr(cand_leis, vagas_leis)
 
-            cand_outros = [c for c in candidatos if not self._e_chunk_cjf(c[1])]
+        # JULGADOS (CJF): só quando pedidos. Relevância pura (mais aderentes ao
+        # tema), pois o usuário quer exemplos próximos da pergunta.
+        escolhidos_julgados: list[tuple] = []
+        if vagas_julgados > 0:
+            cand_cjf = _buscar_amplo_filtrado(True, cand_cjf, vagas_julgados)
+            escolhidos_julgados = _mmr(cand_cjf, vagas_julgados, forcar_relevancia=True)
 
-            # Para a jurisprudência, prioriza ADERÊNCIA ao assunto da pergunta
-            # (similaridade pura), não diversidade — assim os acórdãos trazidos
-            # são os mais próximos do tema pedido.
-            escolhidos_cjf = _mmr(cand_cjf, reserva_cjf, forcar_relevancia=True)
-            # Completa o restante do top-k com os demais (legislação etc.),
-            # onde a diversidade do MMR ainda é útil.
-            vagas_restantes = top_k - len(escolhidos_cjf)
-            escolhidos_outros = _mmr(cand_outros, vagas_restantes)
-
-            selecao = (escolhidos_cjf + escolhidos_outros)[:top_k]
-            return [
+        return {
+            "leis": [
                 {"conteudo": str(d), "metadata": m or {}}
-                for d, m, _ in selecao
-            ]
-
-        # ---- Caso geral (sem pedido explícito de jurisprudência) -----------
-        selecao = _mmr(candidatos, top_k)
-        return [
-            {"conteudo": str(d), "metadata": m or {}}
-            for d, m, _ in selecao
-        ]
+                for d, m, _ in escolhidos_leis
+            ],
+            "julgados": [
+                {"conteudo": str(d), "metadata": m or {}}
+                for d, m, _ in escolhidos_julgados
+            ],
+        }
 
     # -- Chamadas às LLMs (com cronometragem) --------------------------------
 
@@ -1018,23 +1049,41 @@ class Pipeline:
 
     def executar_rag(self, pergunta: str, on_wait=None) -> dict[str, Any]:
         """LLM com RAG: retrieval + geração, cronometrados separadamente."""
-        # 1) Retrieval (embedding da pergunta + busca vetorial).
-        # Busca direto na collection do Chroma (dicts crus), evitando que o
-        # LangChain instancie Documents a partir de registros com texto nulo.
+        # 1) Retrieval SEPARADO por fonte (leis x julgados CJF).
         t0 = time.perf_counter()
-        trechos = self._recuperar_trechos(pergunta)
+        recuperado = self._recuperar_trechos(pergunta)
         tempo_retrieval = time.perf_counter() - t0
 
-        # Monta o contexto PREFIXANDO o cabeçalho de origem (dos metadados) a
-        # cada trecho, para a LLM poder citar processo/arquivo mesmo sem que esse
-        # cabeçalho tenha entrado no embedding.
-        contexto = "\n\n---\n\n".join(
-            self._montar_trecho_contexto(t) for t in trechos
-        )
+        trechos_leis = recuperado.get("leis", [])
+        trechos_julgados = recuperado.get("julgados", [])
+
+        # Monta o contexto em DUAS SEÇÕES rotuladas, prefixando o cabeçalho de
+        # origem (dos metadados) a cada trecho. Isso orienta a LLM a usar a
+        # legislação para fundamentar e os CJF apenas como exemplos de julgados.
+        partes_ctx: list[str] = []
+        if trechos_leis:
+            bloco_leis = "\n\n---\n\n".join(
+                self._montar_trecho_contexto(t) for t in trechos_leis
+            )
+            partes_ctx.append(
+                "## FUNDAMENTAÇÃO LEGAL (legislação — use para fundamentar a "
+                f"resposta)\n\n{bloco_leis}"
+            )
+        if trechos_julgados:
+            bloco_julg = "\n\n---\n\n".join(
+                self._montar_trecho_contexto(t) for t in trechos_julgados
+            )
+            partes_ctx.append(
+                "## JULGADOS (jurisprudência dos arquivos CJF — use APENAS para "
+                f"citar decisões/exemplos)\n\n{bloco_julg}"
+            )
+        contexto = "\n\n==========\n\n".join(partes_ctx)
+
+        # Fontes: preserva a origem de cada trecho (leis + julgados).
         fontes = [
             {"conteudo": self._montar_trecho_contexto(t)[:500],
              "metadata": t["metadata"]}
-            for t in trechos
+            for t in (trechos_leis + trechos_julgados)
         ]
 
         # 2) Geração com contexto
@@ -1110,21 +1159,6 @@ def _montar_gabarito_estruturado(gab_item: dict) -> str:
     return "\n\n".join(partes)
 
 
-# Termos que indicam, num erro crítico do Juiz, uma acusação de que a resposta
-# INVENTOU um processo/julgado. Usados para suprimir esses erros quando os
-# processos citados foram confirmados (DataJud ou base CJF).
-_TERMOS_ALUCINACAO_PROC = (
-    "inventou", "inventad", "alucin", "inexistente", "não existe", "nao existe",
-    "fabricad", "fictício", "ficticio", "forjad", "número falso", "numero falso",
-    "processo falso", "julgado falso", "não encontrado", "nao encontrado",
-)
-# Termos que indicam que o erro é SOBRE processos/julgados (e não outra coisa).
-_TERMOS_REFERE_PROCESSO = (
-    "processo", "julgado", "acórdão", "acordao", "decisão", "decisao",
-    "jurisprud", "precedente", "ementa", "número cnj", "numero cnj",
-)
-
-
 def _ajustar_avaliacao_rag_por_validacao(
     aval_rag: dict,
     validacao_rag: list[dict],
@@ -1138,12 +1172,9 @@ def _ajustar_avaliacao_rag_por_validacao(
       1. julgados_verificaveis: elevado para, no mínimo, o nº de processos
          citados CONFIRMADOS (existe no DataJud OU consta na base CJF). Nunca
          reduz o valor que o Juiz já atribuiu.
-      2. Se há processos citados e TODOS os citados estão confirmados, remove de
-         `erros_criticos` as entradas que acusam invenção/alucinação de processo
-         (texto que combina um termo de "inventado/inexistente" com um termo que
-         se refere a processo/julgado). Erros não relacionados a isso permanecem.
-      3. Anexa à `justificativa_juiz` uma nota factual informando quantos
-         processos citados foram confirmados (e quantos pela base CJF).
+      2. Anexa à `justificativa_juiz` (análise crítica) uma nota factual
+         informando quantos processos citados foram confirmados (e quantos pela
+         base CJF).
     """
     if not isinstance(aval_rag, dict) or not validacao_rag:
         return
@@ -1166,27 +1197,7 @@ def _ajustar_avaliacao_rag_por_validacao(
         log(f"   [ajuste:rag] julgados_verificaveis {verif_juiz} -> {n_conf} "
             f"(processos confirmados: {n_conf}/{total}, sendo {n_base} via base CJF).")
 
-    # 2) Remove erros críticos de "alucinação de processo" quando TODOS os
-    #    processos citados estão confirmados.
-    todos_confirmados = (n_conf == total)
-    if todos_confirmados:
-        erros = aval_rag.get("erros_criticos") or []
-        if isinstance(erros, list) and erros:
-            def _e_falsa_alucinacao(texto: str) -> bool:
-                t = str(texto).lower()
-                refere_proc = any(k in t for k in _TERMOS_REFERE_PROCESSO)
-                acusa_invencao = any(k in t for k in _TERMOS_ALUCINACAO_PROC)
-                return refere_proc and acusa_invencao
-
-            mantidos = [e for e in erros if not _e_falsa_alucinacao(e)]
-            removidos = len(erros) - len(mantidos)
-            if removidos:
-                aval_rag["erros_criticos"] = mantidos
-                log(f"   [ajuste:rag] {removidos} erro(s) crítico(s) de "
-                    f"'alucinação de processo' removido(s): todos os {total} "
-                    f"processo(s) citado(s) foram confirmados (DataJud/base CJF).")
-
-    # 3) Nota factual na justificativa (sempre que houver confirmados).
+    # 2) Nota factual na análise crítica (sempre que houver confirmados).
     nota = (
         f"[Validação factual] {n_conf} de {total} processo(s) citado(s) "
         f"confirmado(s)"
@@ -1196,6 +1207,43 @@ def _ajustar_avaliacao_rag_por_validacao(
     nota += "."
     just = str(aval_rag.get("justificativa_juiz", "") or "").strip()
     aval_rag["justificativa_juiz"] = (just + " " + nota).strip() if just else nota
+
+
+def _anotar_julgados_formato_invalido(aval: dict, resposta: str) -> None:
+    """
+    Anota na análise crítica (justificativa_juiz) quando a resposta APRESENTA
+    julgados, porém NENHUM número de processo em formato CNJ válido pôde ser
+    extraído do texto — indicando que os números citados não seguem o padrão do
+    CNJ e, portanto, foram provavelmente INVENTADOS pela LLM.
+
+    Determinístico; vale para ambas as abordagens (Padrão e RAG). Modifica
+    `aval` no lugar. Só anota quando há julgados apresentados (segundo o Juiz)
+    mas a extração de números CNJ retorna vazio.
+    """
+    from .datajud import extrair_numeros_processo
+
+    if not isinstance(aval, dict):
+        return
+    try:
+        apresentados = int(aval.get("julgados_apresentados") or 0)
+    except (TypeError, ValueError):
+        apresentados = 0
+    if apresentados <= 0:
+        return
+
+    numeros_validos = extrair_numeros_processo(resposta or "")
+    if numeros_validos:
+        return  # há pelo menos um número CNJ válido — não é o caso desta anotação
+
+    # Nenhum número CNJ válido entre os julgados apresentados: provável invenção.
+    aval["julgados_formato_cnj_invalido"] = True
+    nota = (
+        f"[Alerta de julgados] Os {apresentados} julgado(s) apresentado(s) NÃO "
+        f"seguem o padrão de numeração do CNJ e não puderam ser verificados no "
+        f"DataJud — foram provavelmente INVENTADOS."
+    )
+    just = str(aval.get("justificativa_juiz", "") or "").strip()
+    aval["justificativa_juiz"] = (just + " " + nota).strip() if just else nota
 
 
 def _calcular_sentimento_aderente(
@@ -1434,8 +1482,6 @@ def executar_benchmarking(
             )
 
         def _fmt_notas(rotulo: str, av: dict):
-            erros = av.get("erros_criticos") or []
-            n_erros = len(erros) if isinstance(erros, list) else 0
             sent = av.get("sentimento_identificado", "?")
             aderente = av.get("sentimento_aderente_gabarito")
             aderente_txt = (
@@ -1450,14 +1496,11 @@ def executar_benchmarking(
                 f"sentimento={sent} ({aderente_txt}) | "
                 f"julgados={av.get('julgados_apresentados')}/"
                 f"{av.get('julgados_solicitados')} "
-                f"(verif. {av.get('julgados_verificaveis')}) | "
-                f"erros_críticos={n_erros}"
+                f"(verif. {av.get('julgados_verificaveis')})"
             )
-            for e in (erros if isinstance(erros, list) else []):
-                log(f"   [juiz:{rotulo}] erro crítico: {e}")
             justificativa = av.get("justificativa_juiz")
             if justificativa:
-                log(f"   [juiz:{rotulo}] justificativa: {justificativa}")
+                log(f"   [juiz:{rotulo}] análise crítica: {justificativa}")
 
         _fmt_notas("padrao", aval["avaliacao_llm_padrao"])
         _fmt_notas("rag", aval["avaliacao_llm_rag"])
@@ -1524,6 +1567,15 @@ def executar_benchmarking(
             _ajustar_avaliacao_rag_por_validacao(
                 aval["avaliacao_llm_rag"], validacao_rag, log
             )
+
+        # Anota (ambas as abordagens) quando os julgados citados NÃO têm número
+        # CNJ válido — sinal de que foram inventados.
+        _anotar_julgados_formato_invalido(
+            aval["avaliacao_llm_padrao"], r_padrao["resposta"]
+        )
+        _anotar_julgados_formato_invalido(
+            aval["avaliacao_llm_rag"], r_rag["resposta"]
+        )
 
         resultado = {
             "id_pergunta": pid,
@@ -1720,6 +1772,10 @@ def reavaliar_relatorio(
         else:
             validacao_padrao = []
             validacao_rag = []
+
+        # Anota (ambas as abordagens) julgados sem número CNJ válido (inventados).
+        _anotar_julgados_formato_invalido(aval["avaliacao_llm_padrao"], resp_padrao)
+        _anotar_julgados_formato_invalido(aval["avaliacao_llm_rag"], resp_rag)
 
         # Monta o resultado PRESERVANDO os tempos/fontes originais da geração.
         novo = dict(r)  # mantém tudo que já havia (respostas, tempos, fontes...)

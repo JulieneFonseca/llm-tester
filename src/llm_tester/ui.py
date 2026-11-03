@@ -1074,19 +1074,10 @@ def _painel_avaliacao(
             f"({verif} verificáveis)"
         )
 
-    # Erros críticos (violações do campo Inaceitável).
-    erros = aval.get("erros_criticos") or []
-    if isinstance(erros, list) and erros:
-        st.markdown(f"🔴 **{len(erros)} erro(s) crítico(s):**")
-        for e in erros:
-            st.markdown(f"- {e}")
-    else:
-        st.markdown("🟢 **Sem erros críticos**")
-
-    # Justificativa do juiz.
+    # Análise crítica do Juiz.
     just = aval.get("justificativa_juiz")
     if just:
-        st.caption("📝 Justificativa do Juiz:")
+        st.caption("📝 Análise crítica do Juiz:")
         st.info(just)
 
     # Validação factual de processos citados (DataJud).
@@ -1430,8 +1421,8 @@ def _aba_dashboard():
     c1.metric("Fidelidade (RAG)", m["nota_fidelidade_media_rag"])
     c2.metric("Precisão vs Gabarito (Padrão)", m["nota_precisao_media_padrao"])
     c2.metric("Precisão vs Gabarito (RAG)", m["nota_precisao_media_rag"])
-    c3.metric("Erros críticos % (Padrão)", m["taxa_erros_criticos_padrao_pct"])
-    c3.metric("Erros críticos % (RAG)", m["taxa_erros_criticos_rag_pct"])
+    c3.metric("Completude (Padrão)", m["nota_completude_media_padrao"])
+    c3.metric("Completude (RAG)", m["nota_completude_media_rag"])
 
     # Falhas técnicas de avaliação (o Juiz não conseguiu avaliar): são EXCLUÍDAS
     # das médias acima. Informadas aqui para transparência quando houver.
@@ -1504,15 +1495,13 @@ def _aba_dashboard():
     st.subheader("🔎 Tabela Detalhada")
     col_f1, col_f2 = st.columns(2)
     with col_f1:
-        so_aluc = st.checkbox("Só casos com erro crítico (Padrão)")
+        so_sent_div = st.checkbox("Só sentimento divergente (RAG)")
     with col_f2:
         so_rag_vence = st.checkbox("Só quando RAG > Padrão (precisão)")
 
     df_view = df.copy()
-    if so_aluc:
-        df_view = df_view[
-            df_view["erros_criticos_padrao"].fillna("").astype(str).str.len() > 0
-        ]
+    if so_sent_div:
+        df_view = df_view[df_view["sentimento_aderente_rag"] == False]  # noqa: E712
     if so_rag_vence:
         df_view = df_view[df_view["nota_precisao_rag"] > df_view["nota_precisao_padrao"]]
 
@@ -1530,7 +1519,6 @@ def _aba_dashboard():
         "julgados_solicitados",
         "julgados_apresentados_padrao", "julgados_apresentados_rag",
         "julgados_verificaveis_padrao", "julgados_verificaveis_rag",
-        "erros_criticos_padrao", "erros_criticos_rag",
         "justificativa_padrao", "justificativa_rag",
         "tempo_retrieval_rag_s", "tempo_geracao_rag_s", "tempo_juiz_s",
     ]
@@ -1887,13 +1875,23 @@ def _aba_rag():
     if st.button("🔎 Buscar", type="primary") and consulta.strip():
         with st.spinner("Recuperando trechos..."):
             try:
+                # IMPORTANTE: gera o embedding da consulta com o MESMO modelo do
+                # pipeline (via _get_embeddings), e não com a função default do
+                # Chroma. Isso garante a dimensão correta (ex.: e5-base = 768) e
+                # os prefixos exigidos por alguns modelos (e5: "query:"). Usar
+                # query_texts faria o Chroma embutir com o modelo default (384),
+                # causando "Embedding dimension 384 does not match 768".
+                from .pipeline import Pipeline
+                _pipe = Pipeline(cfg)
+                emb_consulta = _pipe._get_embeddings().embed_query(consulta)
+
                 if apenas_cjf:
                     # O Chroma não filtra por prefixo de string no `where`;
                     # então buscamos um lote maior e filtramos pelo metadado
                     # `source` (nome do arquivo começa com 'CJF'), ficando com
                     # os n_result primeiros.
                     bruto = col.query(
-                        query_texts=[consulta],
+                        query_embeddings=[emb_consulta],
                         n_results=max(n_result * 10, 100),
                     )
                     b_docs = (bruto.get("documents") or [[]])[0]
@@ -1909,7 +1907,9 @@ def _aba_rag():
                         if len(docs) >= n_result:
                             break
                 else:
-                    res = col.query(query_texts=[consulta], n_results=n_result)
+                    res = col.query(
+                        query_embeddings=[emb_consulta], n_results=n_result
+                    )
                     docs = (res.get("documents") or [[]])[0]
                     metas = (res.get("metadatas") or [[]])[0]
                     dists = (res.get("distances") or [[]])[0]

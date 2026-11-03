@@ -8,8 +8,7 @@ permite usar `abordagem` como eixo/legenda no Power BI sem medidas DAX extras.
 
 Abas:
   - resultados: uma linha por (execução × pergunta × abordagem). Notas, tempos,
-    alucinação quantificada (erros críticos, processos citados/confirmados),
-    julgados e sentimento.
+    processos citados/confirmados, julgados e sentimento.
   - metricas_globais: uma linha por (execução × abordagem), com as médias/taxas
     já calculadas pelo pipeline (KPIs prontos para cartões).
   - textos: uma linha por (execução × pergunta × abordagem) com os textos longos
@@ -65,11 +64,6 @@ def _contar_processos(validacao: list[dict] | None) -> dict[str, int]:
         "processos_confirmados_base_cjf": confirmados_base,
         "processos_nao_confirmados": nao_confirmados,
     }
-
-
-def _qtd_erros(av: dict) -> int:
-    erros = av.get("erros_criticos") or []
-    return len(erros) if isinstance(erros, list) else (1 if str(erros).strip() else 0)
 
 
 def _bool_para_int(valor: Any) -> int | None:
@@ -132,7 +126,6 @@ def _linhas_resultados(relatorio: dict, exec_id: str, data_hora: str,
 
         for abordagem, dados in especificos.items():
             av = dados["aval"]
-            qtd_erros = _qtd_erros(av)
             contagem = _contar_processos(dados["validacao"])
             linha = {
                 # Chaves de relacionamento (Power BI).
@@ -149,9 +142,6 @@ def _linhas_resultados(relatorio: dict, exec_id: str, data_hora: str,
                 "tempo_retrieval_s": dados["tempo_retrieval_s"],
                 "tempo_geracao_s": dados["tempo_geracao_s"],
                 "tempo_avaliacao_juiz_s": r.get("tempo_avaliacao_juiz_s"),
-                # Erros críticos / alucinação
-                "erros_criticos_qtd": qtd_erros,
-                "tem_erro_critico": 1 if qtd_erros > 0 else 0,
                 # Julgados
                 "julgados_solicitados": av.get("julgados_solicitados"),
                 "julgados_apresentados": av.get("julgados_apresentados"),
@@ -189,7 +179,6 @@ def _linhas_metricas_globais(relatorio: dict, exec_id: str, data_hora: str,
             "nota_fidelidade_media": m.get(f"nota_fidelidade_media_{suf}"),
             "nota_precisao_media": m.get(f"nota_precisao_media_{suf}"),
             "nota_completude_media": m.get(f"nota_completude_media_{suf}"),
-            "taxa_erros_criticos_pct": m.get(f"taxa_erros_criticos_{suf}_pct"),
             "taxa_sentimento_aderente_pct": m.get(
                 f"taxa_sentimento_aderente_{suf}_pct"
             ),
@@ -213,8 +202,6 @@ def _linhas_textos(relatorio: dict, exec_id: str) -> list[dict]:
             ("RAG", "resposta_llm_rag", "avaliacao_llm_rag"),
         ):
             av = r.get(aval_key, {}) or {}
-            erros = av.get("erros_criticos") or []
-            erros_txt = " | ".join(str(e) for e in erros) if isinstance(erros, list) else str(erros)
             linhas.append({
                 # Chaves de relacionamento (Power BI).
                 "chave_linha": _chave_linha(exec_id, pid, abordagem),
@@ -225,7 +212,6 @@ def _linhas_textos(relatorio: dict, exec_id: str) -> list[dict]:
                 "pergunta": pergunta,
                 "gabarito": gabarito,
                 "resposta": r.get(resp_key),
-                "erros_criticos": erros_txt,
                 "justificativa_juiz": av.get("justificativa_juiz"),
             })
     return linhas

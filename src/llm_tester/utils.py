@@ -457,20 +457,6 @@ def calcular_metricas_globais(resultados: list[dict]) -> dict[str, Any]:
                 out.append(valor)
         return out
 
-    def taxa_erros_criticos(abordagem: str) -> float:
-        """
-        % de respostas (entre as avaliadas com sucesso) que incorreram em ao
-        menos um erro crítico. Falhas técnicas NÃO entram no denominador.
-        """
-        flags = []
-        for r in resultados:
-            av = r.get(abordagem)
-            if not _e_valida(av):
-                continue
-            erros = av.get("erros_criticos") or []
-            flags.append(bool(erros) if isinstance(erros, list) else bool(erros))
-        return round(100.0 * sum(flags) / len(flags), 2) if flags else 0.0
-
     def taxa_sentimento_aderente(abordagem: str) -> float:
         """% de respostas cujo sentimento foi aderente ao gabarito (só válidas)."""
         flags = []
@@ -503,8 +489,6 @@ def calcular_metricas_globais(resultados: list[dict]) -> dict[str, Any]:
         "nota_precisao_media_rag": _media(notas("avaliacao_llm_rag", "nota_precisao_gabarito")),
         "nota_completude_media_padrao": _media(notas("avaliacao_llm_padrao", "nota_completude")),
         "nota_completude_media_rag": _media(notas("avaliacao_llm_rag", "nota_completude")),
-        "taxa_erros_criticos_padrao_pct": taxa_erros_criticos("avaliacao_llm_padrao"),
-        "taxa_erros_criticos_rag_pct": taxa_erros_criticos("avaliacao_llm_rag"),
         "taxa_sentimento_aderente_padrao_pct": taxa_sentimento_aderente("avaliacao_llm_padrao"),
         "taxa_sentimento_aderente_rag_pct": taxa_sentimento_aderente("avaliacao_llm_rag"),
         # Transparência sobre falhas técnicas de avaliação (excluídas das médias).
@@ -574,12 +558,6 @@ def relatorio_para_linhas_csv(relatorio: dict) -> list[dict]:
         av_p = r.get("avaliacao_llm_padrao", {})
         av_r = r.get("avaliacao_llm_rag", {})
 
-        def _erros(av: dict) -> str:
-            erros = av.get("erros_criticos") or []
-            if isinstance(erros, list):
-                return " | ".join(str(e) for e in erros)
-            return str(erros)
-
         linhas.append({
             "id": r.get("id_pergunta"),
             "pergunta": r.get("pergunta"),
@@ -593,7 +571,6 @@ def relatorio_para_linhas_csv(relatorio: dict) -> list[dict]:
             "sentimento_aderente_padrao": av_p.get("sentimento_aderente_gabarito"),
             "julgados_apresentados_padrao": av_p.get("julgados_apresentados"),
             "julgados_verificaveis_padrao": av_p.get("julgados_verificaveis"),
-            "erros_criticos_padrao": _erros(av_p),
             "resposta_rag": r.get("resposta_llm_rag"),
             "tempo_retrieval_rag_s": r.get("tempo_retrieval_rag_s"),
             "tempo_geracao_rag_s": r.get("tempo_geracao_rag_s"),
@@ -607,7 +584,6 @@ def relatorio_para_linhas_csv(relatorio: dict) -> list[dict]:
             "julgados_verificaveis_rag": av_r.get("julgados_verificaveis"),
             "julgados_solicitados": av_r.get("julgados_solicitados")
                 or av_p.get("julgados_solicitados"),
-            "erros_criticos_rag": _erros(av_r),
             "justificativa_padrao": av_p.get("justificativa_juiz"),
             "justificativa_rag": av_r.get("justificativa_juiz"),
             "tempo_juiz_s": r.get("tempo_avaliacao_juiz_s"),
