@@ -38,10 +38,8 @@ Cada etapa é **cronometrada** (`time.perf_counter()`), permitindo medir o
 llm-tester/
 ├── data/
 │   ├── base_juridica/      # PDFs/TXTs/CSVs (acórdãos, legislação) — vector DB
-│   ├── perguntas/
-│   │   └── perguntas.json  # Dataset de perguntas de entrada
 │   └── gabarito/
-│       └── gabarito.json   # Respostas oficiais de referência
+│       └── gabarito.json   # Perguntas + respostas oficiais (fonte única)
 ├── outputs/                # Relatórios JSON/CSV gerados
 ├── src/llm_tester/
 │   ├── config.py           # Leitura de parâmetros e chave de API
@@ -205,8 +203,9 @@ lembra de **reindexar a base** para não misturar embeddings de temas diferentes
 1. **Carregue os arquivos do novo tema:**
    - Aponte o *Diretório da base jurídica* (aba Configurações) para a pasta com
      os novos PDFs/TXTs.
-   - Substitua `perguntas.json` e `gabarito.json` (pela aba **Dados** ou nos
-     caminhos definidos em `dados` no `config.json`).
+   - Substitua o `gabarito.json` (pela aba **Dados**, importando um Word
+     `.docx` no formato "Questão NN – ..." ou carregando JSON/CSV/XLSX; o caminho
+     é definido em `dados` no `config.json`). As perguntas são derivadas do gabarito.
 2. **Edite o tema** — pela seção `tema` do `config.json` ou pelo painel
    **🏷️ Tema** na aba Configurações (com o botão de salvar).
 3. **Troque o `collection_name`** (em `parametros`) por um nome novo, ou marque

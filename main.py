@@ -66,8 +66,8 @@ def main() -> int:
         )
         return 1
 
-    perguntas = utils.carregar_perguntas(config.dados["arquivo_perguntas"])
     gabarito = utils.carregar_gabarito(config.dados["arquivo_gabarito"])
+    perguntas = utils.perguntas_do_gabarito(gabarito)
     console.print(f"\n{len(perguntas)} perguntas | {len(gabarito)} itens de gabarito\n")
 
     relatorio = executar_benchmarking(

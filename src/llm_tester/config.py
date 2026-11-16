@@ -42,7 +42,6 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "api": {"groq_api_key_env": "GROQ_API_KEY"},
     "dados": {
         "base_juridica": "data/base_juridica/",
-        "arquivo_perguntas": "data/perguntas/perguntas.json",
         "arquivo_gabarito": "data/gabarito/gabarito.json",
         "diretorio_saida": "outputs/",
     },

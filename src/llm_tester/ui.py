@@ -455,6 +455,74 @@ def _extrair_registros(df: "pd.DataFrame", colunas: list[str]) -> list[dict]:
     return [r for r in registros if r]
 
 
+def _painel_importar_docx(cfg: Config):
+    """Importa o gabarito de um Word (.docx) e gera gabarito.json + gabarito.xlsx."""
+    from . import importar_docx
+
+    with st.expander("📄 Importar gabarito do Word (.docx)", expanded=False):
+        st.caption(
+            "Carrega o documento no formato 'Questão NN – ...' (Pergunta, Resposta "
+            "esperada, Ementa esperada, Referência, Pontos obrigatórios, Inaceitável) "
+            "e gera o gabarito.json. O arquivo atual é "
+            "salvo como .bak antes de ser substituído."
+        )
+        arq = st.file_uploader("Arquivo Word", type=["docx"], key="docx_gabarito")
+        if arq is None:
+            return
+        try:
+            itens, avisos = importar_docx.parsear(arq.getvalue())
+        except Exception as exc:  # noqa: BLE001
+            st.error(f"Não foi possível ler o documento: {exc}")
+            return
+
+        for a in avisos:
+            st.warning(a)
+        if not itens:
+            return
+
+        st.write(f"**{len(itens)} questões** identificadas.")
+        st.dataframe(
+            pd.DataFrame(
+                [
+                    {
+                        "id": it["id"],
+                        "sentimento": it.get("sentimento_esperado", ""),
+                        "julgados": it.get("julgados_solicitados", ""),
+                        "nº referências": len(it.get("referencias", [])),
+                        "nº inaceitáveis": len(it.get("criterios_inaceitaveis", [])),
+                    }
+                    for it in itens
+                ]
+            ),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+        if st.button("Gerar arquivos", type="primary", key="btn_gerar_docx"):
+            try:
+                res = importar_docx.gravar_arquivos(itens, cfg.dados["arquivo_gabarito"])
+            except Exception as exc:  # noqa: BLE001
+                st.error(f"Falha ao gravar os arquivos: {exc}")
+                return
+            st.session_state["gabarito"] = itens
+            st.session_state["docx_resultado"] = res
+            st.session_state.pop("editor_gabarito", None)
+            st.rerun()
+
+    res = st.session_state.get("docx_resultado")
+    if res:
+        st.success(
+            f"Gabarito gerado e carregado: {res['json']}"
+            + (f" (backups: {', '.join(res['backups'])})" if res["backups"] else "")
+        )
+        st.download_button(
+            "⬇️ gabarito.json",
+            Path(res["json"]).read_bytes(),
+            file_name="gabarito.json",
+            mime="application/json",
+        )
+
+
 def _aba_dados_teste():
     st.header("🗂️ Dados")
     st.caption(
@@ -464,6 +532,8 @@ def _aba_dados_teste():
         "carregados, o sistema usa o arquivo padrão em data/."
     )
     cfg: Config = st.session_state["config"]
+
+    _painel_importar_docx(cfg)
 
     _editor_dataset(
         titulo="✅ Gabarito (Perguntas/Respostas)",
